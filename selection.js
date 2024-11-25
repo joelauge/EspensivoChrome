@@ -94,21 +94,23 @@
   }
 
   async function captureSelection() {
-    const rect = selectionDiv.getBoundingClientRect();
-    
     try {
-      // Store the selection dimensions
-      const selectionRect = {
+      // Store the dimensions before hiding elements
+      const rect = selectionDiv.getBoundingClientRect();
+      const dimensions = {
         left: rect.left,
         top: rect.top,
         width: rect.width,
         height: rect.height
       };
 
-      // Hide ALL selection UI elements before capturing
-      selectionDiv.style.visibility = 'hidden';
-      captureBtn.style.visibility = 'hidden';
-      overlay.style.visibility = 'hidden';
+      // Temporarily hide ALL UI elements
+      selectionDiv.style.display = 'none';
+      captureBtn.style.display = 'none';
+      overlay.style.background = 'transparent';
+      
+      // Give the browser a moment to repaint without the UI elements
+      await new Promise(resolve => setTimeout(resolve, 100));
 
       // Take screenshot
       const response = await chrome.runtime.sendMessage({
@@ -130,19 +132,19 @@
         img.src = response.dataUrl;
       });
 
-      canvas.width = selectionRect.width;
-      canvas.height = selectionRect.height;
+      canvas.width = dimensions.width;
+      canvas.height = dimensions.height;
 
       ctx.drawImage(
         img,
-        selectionRect.left * window.devicePixelRatio,
-        selectionRect.top * window.devicePixelRatio,
-        selectionRect.width * window.devicePixelRatio,
-        selectionRect.height * window.devicePixelRatio,
+        dimensions.left * window.devicePixelRatio,
+        dimensions.top * window.devicePixelRatio,
+        dimensions.width * window.devicePixelRatio,
+        dimensions.height * window.devicePixelRatio,
         0,
         0,
-        selectionRect.width,
-        selectionRect.height
+        dimensions.width,
+        dimensions.height
       );
 
       const imageData = canvas.toDataURL('image/png');
@@ -154,20 +156,17 @@
       });
 
       // Clean up
-      document.body.removeChild(overlay);
-      document.body.removeChild(selectionDiv);
-      document.body.removeChild(captureBtn);
-
+      cleanup();
     } catch (error) {
       console.error('Capture error:', error);
-      chrome.runtime.sendMessage({
-        action: 'captureError',
-        error: error.message
-      });
-      document.body.removeChild(overlay);
-      document.body.removeChild(selectionDiv);
-      document.body.removeChild(captureBtn);
+      cleanup();
     }
+  }
+
+  function cleanup() {
+    document.body.removeChild(overlay);
+    document.body.removeChild(selectionDiv);
+    document.body.removeChild(captureBtn);
   }
 
   createOverlay();

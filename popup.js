@@ -164,6 +164,14 @@ async function loadReceipts() {
                 `).join('')}
               </select>
             </div>
+            <div class="file-receipt-action">
+              <button class="file-btn" data-index="${index}">
+                <svg class="file-icon" viewBox="0 0 20 20" width="20" height="20">
+                  <path d="M10 12V4M10 12l-3-3M10 12l3-3M3 15v2a2 2 0 002 2h10a2 2 0 002-2v-2" stroke="currentColor" fill="none" stroke-width="2"/>
+                </svg>
+                File Receipt
+              </button>
+            </div>
           </div>
         ` : ''}
       </div>
@@ -188,6 +196,14 @@ async function loadReceipts() {
     document.querySelectorAll('.image-preview').forEach(preview => {
       preview.addEventListener('click', () => {
         viewReceipt(preview.dataset.image);
+      });
+    });
+
+    // Add event listener for file buttons
+    document.querySelectorAll('.file-btn').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const index = parseInt(btn.dataset.index);
+        await fileReceipt(index);
       });
     });
   } catch (error) {
@@ -278,13 +294,13 @@ async function analyzeReceipt(index) {
       body: JSON.stringify({
         model: 'claude-3-haiku-20240307',
         max_tokens: 1024,
-        system: "You are a receipt analysis expert. Extract key information from receipts and format it as JSON.",
+        system: "You are a receipt analysis expert. Extract key information from receipts and format it as JSON. For expense_category, choose from these exact options only: Meals & Entertainment, Travel, Office Supplies, Software & Subscriptions, Professional Services, Utilities, Marketing, Equipment, Training & Education, Other",
         messages: [{
           role: 'user',
           content: [
             {
               type: 'text',
-              text: 'Please analyze this receipt image and extract the following information in JSON format: total_amount (with currency), date (in YYYY-MM-DD format), vendor_name, and expense_category.'
+              text: 'Please analyze this receipt image and extract the following information in JSON format: total_amount (with currency), date (in YYYY-MM-DD format), vendor_name, and expense_category (must be one of the predefined categories).'
             },
             {
               type: 'image',
@@ -327,7 +343,9 @@ async function analyzeReceipt(index) {
       total: analysis.total_amount,
       date: analysis.date,
       vendor: analysis.vendor_name,
-      category: analysis.expense_category
+      category: analysis.expense_category,
+      taxes: analysis.taxes || '$0.00',
+      payment_method: analysis.payment_method || 'N/A'
     };
 
     // Save updated receipt
@@ -345,5 +363,95 @@ async function analyzeReceipt(index) {
       analyzeBtn.textContent = 'Retry Analysis';
       analyzeBtn.disabled = false;
     }
+  }
+}
+
+async function fileReceipt(index) {
+  try {
+    logDebug('Starting receipt filing process...', 'info');
+    
+    const btn = document.querySelector(`[data-index="${index}"].file-btn`);
+    const originalText = btn.innerHTML;
+    
+    // Show loading state
+    btn.innerHTML = `
+      <div class="loading-spinner"></div>
+      Sending...
+    `;
+    btn.disabled = true;
+
+    // Get receipt and settings
+    const storage = await chrome.storage.local.get(['capturedReceipts']);
+    const settings = await chrome.storage.sync.get(['expenseEmail', 'serviceType']);
+    const receipt = storage.capturedReceipts[index];
+
+    if (!receipt.analysis) {
+      throw new Error('Please analyze the receipt first');
+    }
+
+    if (!settings.expenseEmail) {
+      throw new Error('Please configure email settings first');
+    }
+
+    logDebug(`Preparing email with receipt from ${receipt.analysis.vendor}...`, 'info');
+
+    // Prepare email data with PNG image
+    const emailData = {
+      to: settings.expenseEmail,
+      subject: `Expense Receipt - ${receipt.analysis.vendor} - ${receipt.analysis.total}`,
+      body: `
+Receipt Details:
+--------------
+Vendor: ${receipt.analysis.vendor}
+Amount: ${receipt.analysis.total}
+Date: ${receipt.analysis.date}
+Category: ${receipt.analysis.category}
+${receipt.analysis.payment_method ? `Payment Method: ${receipt.analysis.payment_method}` : ''}
+Taxes: ${receipt.analysis.taxes || '$0.00'}
+
+This receipt was filed with Espensivo's Expense Receipt Chrome plugin. Get yours at https://espensivo.com
+      `,
+      attachments: [{
+        filename: 'receipt.png',
+        content: receipt.image.split(',')[1], // Remove the data:image/png;base64 prefix
+        contentType: 'image/png'
+      }]
+    };
+
+    logDebug(`Sending email to ${settings.expenseEmail} (${settings.serviceType})...`, 'info');
+
+    // Send the email
+    try {
+      const response = await sendEmail(emailData);
+      logDebug('Email sent successfully', 'success');
+    } catch (error) {
+      logDebug(`Email sending failed: ${error.message}`, 'error');
+      throw new Error(`Failed to send email: ${error.message}`);
+    }
+
+    // Show success message
+    btn.innerHTML = `
+      <svg class="file-icon" viewBox="0 0 20 20">
+        <path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/>
+      </svg>
+      Filed!
+    `;
+    
+    // Reset button after 3 seconds
+    setTimeout(() => {
+      btn.innerHTML = originalText;
+      btn.disabled = false;
+    }, 3000);
+
+  } catch (error) {
+    logDebug(error.message, 'error');
+    const btn = document.querySelector(`[data-index="${index}"].file-btn`);
+    btn.innerHTML = `
+      <svg class="file-icon" viewBox="0 0 20 20">
+        <path d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"/>
+      </svg>
+      Retry
+    `;
+    btn.disabled = false;
   }
 } 

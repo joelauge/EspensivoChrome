@@ -32,7 +32,8 @@
     "resources": [
       "selection.js",
       "settings.html",
-      "images/*"
+      "images/*",
+      "lib/*"
     ],
     "matches": ["<all_urls>"]
   }]

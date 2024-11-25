@@ -60,12 +60,19 @@ async function saveAllSettings() {
     return;
   }
 
+  // Validate email if using custom service type
+  if (settings.serviceType === 'custom' && !settings.expenseEmail) {
+    showStatus('Please provide an email address for custom email destination', 'error');
+    return;
+  }
+
   try {
     await chrome.storage.sync.set(settings);
     showStatus('Settings saved successfully', 'success');
     console.log('Settings saved:', {
       hasAnthropicKey: !!settings.anthropicKey,
-      keyFormat: settings.anthropicKey ? settings.anthropicKey.substring(0, 7) + '...' : 'none'
+      keyFormat: settings.anthropicKey ? settings.anthropicKey.substring(0, 7) + '...' : 'none',
+      serviceType: settings.serviceType
     });
   } catch (error) {
     showStatus('Error saving settings: ' + error.message, 'error');
