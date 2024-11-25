@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Espensivo</title>
+  <style>
+    body {
+      width: 400px;
+      padding: 16px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+    }
+    .container {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    button {
+      padding: 8px 16px;
+      background: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    button:hover {
+      background: #1d4ed8;
+    }
+    button:disabled {
+      background: #93c5fd;
+      cursor: not-allowed;
+    }
+    .settings {
+      margin-top: 16px;
+    }
+    .form-group {
+      margin-bottom: 12px;
+    }
+    label {
+      display: block;
+      margin-bottom: 4px;
+      color: #374151;
+    }
+    input, select {
+      width: 100%;
+      padding: 6px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    #debugPanel {
+      margin-top: 16px;
+      padding: 8px;
+      background: #f3f4f6;
+      border-radius: 4px;
+      font-size: 12px;
+      max-height: 100px;
+      overflow-y: auto;
+    }
+    .error { color: #dc2626; }
+    .success { color: #059669; }
+    .info { color: #2563eb; }
+
+    /* Receipt Analysis Styles */
+    .analysis-results {
+      margin-top: 20px;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      overflow: hidden;
+    }
+    .receipt-summary {
+      padding: 16px;
+    }
+    .receipt-summary h3 {
+      margin: 0 0 16px 0;
+      color: #1f2937;
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .receipt-details {
+      display: grid;
+      gap: 12px;
+    }
+    .detail {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px;
+      background: #f9fafb;
+      border-radius: 4px;
+    }
+    .detail .label {
+      color: #6b7280;
+      font-size: 13px;
+    }
+    .detail .value {
+      color: #111827;
+      font-weight: 500;
+      font-size: 14px;
+    }
+    
+    /* Loading State */
+    .loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .loading-spinner {
+      border: 3px solid #f3f3f3;
+      border-radius: 50%;
+      border-top: 3px solid #2563eb;
+      width: 24px;
+      height: 24px;
+      animation: spin 1s linear infinite;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    /* Status Messages */
+    .status-message {
+      padding: 8px 12px;
+      margin: 8px 0;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    .status-message.processing {
+      background: #dbeafe;
+      color: #1e40af;
+    }
+    .status-message.success {
+      background: #dcfce7;
+      color: #166534;
+    }
+    .status-message.error {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    /* Receipt List Styles */
+    .receipt-list {
+      margin-top: 16px;
+      border-top: 1px solid #e5e7eb;
+      padding-top: 16px;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    .receipt-list h3 {
+      margin: 0 0 12px 0;
+      color: #1f2937;
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .receipt-item {
+      background: white;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      padding: 12px;
+      margin-bottom: 12px;
+    }
+    .receipt-item:hover {
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+    .receipt-item .image-preview {
+      width: 100%;
+      height: 200px;
+      margin-bottom: 8px;
+      border-radius: 4px;
+      overflow: auto;
+      background: #f3f4f6;
+      cursor: grab;
+    }
+    .receipt-item .image-preview:active {
+      cursor: grabbing;
+    }
+    .receipt-item .image-preview img {
+      width: 100%;
+      height: auto;
+      max-height: none;
+      object-fit: contain;
+      object-position: top;
+      user-select: none;
+      -webkit-user-drag: none;
+    }
+    .receipt-item .image-preview {
+      scroll-behavior: smooth;
+    }
+    .receipt-item .image-preview::-webkit-scrollbar {
+      width: 0;
+      height: 0;
+    }
+    .receipt-item .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .receipt-item .timestamp {
+      font-size: 12px;
+      color: #6b7280;
+    }
+    .receipt-item .actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .receipt-item .actions button {
+      flex: 1;
+      font-size: 12px;
+      padding: 6px 12px;
+    }
+    .receipt-item .actions .delete-btn {
+      background: #ef4444;
+    }
+    .receipt-item .actions .delete-btn:hover {
+      background: #dc2626;
+    }
+    .receipt-item .actions .analyze-btn {
+      background: #059669;
+    }
+    .receipt-item .actions .analyze-btn:hover {
+      background: #047857;
+    }
+    .receipt-item .analysis {
+      margin-top: 8px;
+      padding: 8px;
+      background: #f9fafb;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+    .receipt-item .analysis-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 4px;
+    }
+    .receipt-item .analysis-label {
+      color: #6b7280;
+    }
+    .receipt-item .analysis-value {
+      font-weight: 500;
+      color: #111827;
+    }
+    .no-receipts {
+      text-align: center;
+      color: #6b7280;
+      padding: 20px;
+      font-size: 14px;
+    }
+
+    /* Updated Modal Styles */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.85);
+      z-index: 9999;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .modal-overlay.active {
+      display: flex;
+    }
+
+    .modal-content {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      position: relative;
+      width: 90vw;  /* Use viewport width */
+      height: 90vh; /* Use viewport height */
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      overflow: auto;
+    }
+
+    .modal-close {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: #ef4444;
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 32px;
+      height: 32px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      z-index: 10000;
+    }
+
+    .modal-image {
+      max-width: 100%;
+      max-height: 100%;
+      object-fit: contain;
+      margin: auto;
+    }
+
+    /* Make modal scrollable on smaller screens */
+    @media (max-height: 600px) {
+      .modal-content {
+        height: auto;
+        max-height: 90vh;
+      }
+    }
+
+    /* Add view button styles */
+    .receipt-item .actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .receipt-item .actions .view-btn {
+      background: #6366f1;
+    }
+
+    .receipt-item .actions .view-btn:hover {
+      background: #4f46e5;
+    }
+
+    /* Make image preview clickable */
+    .receipt-item .image-preview {
+      position: relative;
+      cursor: pointer;
+    }
+
+    /* Add styles for settings link */
+    .header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .settings-link {
+      display: flex;
+      align-items: center;
+      color: #2563eb;
+      text-decoration: none;
+      font-size: 14px;
+      gap: 4px;
+    }
+
+    .settings-link:hover {
+      text-decoration: underline;
+    }
+
+    .settings-icon {
+      width: 16px;
+      height: 16px;
+    }
+
+    .category-selector select {
+      padding: 4px 8px;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      font-size: 13px;
+      background: white;
+      color: #111827;
+      width: 150px;
+    }
+
+    .category-selector select:focus {
+      outline: none;
+      border-color: #2563eb;
+      ring: 2px solid rgba(37, 99, 235, 0.2);
+    }
+
+    .analysis-row.category-selector {
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid #e5e7eb;
+    }
+
+    .file-receipt-action {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid #e5e7eb;
+    }
+
+    .file-btn {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      background: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+      transition: all 0.2s ease;
+    }
+
+    .file-btn:hover {
+      background: #1d4ed8;
+    }
+
+    .file-btn .file-icon {
+      width: 20px;
+      height: 20px;
+    }
+
+    /* Update analysis section styles */
+    .analysis {
+      margin-top: 8px;
+      padding: 12px;
+      background: #f9fafb;
+      border-radius: 4px;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <img src="/images/icon128.png" alt="Espensivo Icon" style="width: 24px; height: 24px;">
+        <h2>Espensivo</h2>
+      </div>
+      <a href="#" id="settingsLink" class="settings-link">
+        <svg class="settings-icon" viewBox="0 0 20 20" width="16" height="16">
+          <path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/>
+          <path d="M17 10c0-.3-.1-.6-.2-.9l1.3-1.7c.3-.4.2-1-.2-1.3l-2-1.2c-.4-.3-1-.2-1.3.2l-1.3 1.7c-.6-.3-1.2-.4-1.8-.4-.6 0-1.2.1-1.8.4L8.4 5.1c-.3-.4-.9-.5-1.3-.2l-2 1.2c-.4.3-.5.9-.2 1.3l1.3 1.7c-.1.3-.2.6-.2.9s.1.6.2.9L4.9 12.6c-.3.4-.2 1 .2 1.3l2 1.2c.4.3 1 .2 1.3-.2l1.3-1.7c.6.3 1.2.4 1.8.4.6 0 1.2-.1 1.8-.4l1.3 1.7c.3.4.9.5 1.3.2l2-1.2c.4-.3.5-.9.2-1.3l-1.3-1.7c.1-.3.2-.6.2-.9z"/>
+        </svg>
+        Settings
+      </a>
+    </div>
+
+    <button id="captureBtn">Drag your Mouse to Select your Receipt</button>
+
+    <!-- Receipt List Section -->
+    <div class="receipt-list">
+      <h3>Captured Receipts</h3>
+      <div id="receiptsList">
+        <div class="no-receipts">No receipts captured yet</div>
+      </div>
+    </div>
+    
+    <div id="debugPanel">
+      <div class="info">Debug messages will appear here...</div>
+    </div>
+  </div>
+
+  <!-- Add Modal HTML -->
+  <div id="imageModal" class="modal-overlay">
+    <div class="modal-content">
+      <button class="modal-close">&times;</button>
+      <img class="modal-image" src="" alt="Full Receipt">
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html> 

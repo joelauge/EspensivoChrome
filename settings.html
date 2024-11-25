@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Espensivo Settings</title>
+  <style>
+    body {
+      width: 500px;
+      padding: 20px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    
+    .settings-container {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+    
+    .settings-section {
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 16px;
+    }
+    
+    .settings-section h2 {
+      margin: 0 0 16px 0;
+      font-size: 16px;
+      color: #1f2937;
+    }
+    
+    .form-group {
+      margin-bottom: 16px;
+    }
+    
+    label {
+      display: block;
+      margin-bottom: 4px;
+      color: #374151;
+      font-size: 14px;
+    }
+    
+    input, select {
+      width: 100%;
+      padding: 8px;
+      border: 1px solid #d1d5db;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    
+    .categories-list {
+      margin: 16px 0;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    
+    .category-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px;
+      border: 1px solid #e5e7eb;
+      border-radius: 4px;
+      margin-bottom: 8px;
+    }
+    
+    button {
+      padding: 8px 16px;
+      background: #2563eb;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    
+    button:hover {
+      background: #1d4ed8;
+    }
+    
+    button.delete {
+      background: #ef4444;
+    }
+    
+    button.delete:hover {
+      background: #dc2626;
+    }
+    
+    .add-category {
+      display: flex;
+      gap: 8px;
+      margin-top: 16px;
+    }
+    
+    .status {
+      margin-top: 16px;
+      padding: 8px;
+      border-radius: 4px;
+      font-size: 14px;
+    }
+    
+    .status.success {
+      background: #dcfce7;
+      color: #166534;
+    }
+    
+    .status.error {
+      background: #fee2e2;
+      color: #991b1b;
+    }
+
+    .toggle-switch {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+
+    .switch {
+      position: relative;
+      display: inline-block;
+      width: 48px;
+      height: 24px;
+    }
+
+    .switch input {
+      opacity: 0;
+      width: 0;
+      height: 0;
+    }
+
+    .slider {
+      position: absolute;
+      cursor: pointer;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: #cbd5e1;
+      transition: .4s;
+      border-radius: 24px;
+    }
+
+    .slider:before {
+      position: absolute;
+      content: "";
+      height: 18px;
+      width: 18px;
+      left: 3px;
+      bottom: 3px;
+      background-color: white;
+      transition: .4s;
+      border-radius: 50%;
+    }
+
+    input:checked + .slider {
+      background-color: #2563eb;
+    }
+
+    input:checked + .slider:before {
+      transform: translateX(24px);
+    }
+  </style>
+</head>
+<body>
+  <div class="settings-container">
+    <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px;">
+      <img src="/images/icon128.png" alt="Espensivo Icon" style="width: 24px; height: 24px;">
+      <h1 style="margin: 0; font-size: 20px; color: #1f2937;">Espensivo Settings</h1>
+    </div>
+    
+    <div class="settings-section">
+      <h2>Debug Settings</h2>
+      <div class="toggle-switch">
+        <label class="switch">
+          <input type="checkbox" id="debugToggle">
+          <span class="slider"></span>
+        </label>
+        <span>Show Debug Messages</span>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h2>API Configuration</h2>
+      <div class="form-group">
+        <label for="anthropicKey">Anthropic API Key</label>
+        <input type="password" id="anthropicKey" placeholder="sk-ant-...">
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h2>Service Configuration</h2>
+      <div class="form-group">
+        <label for="expenseEmail">Expense Email Address</label>
+        <input type="email" id="expenseEmail" placeholder="your-org@expensify.com">
+      </div>
+      <div class="form-group">
+        <label for="serviceType">Service Type</label>
+        <select id="serviceType">
+          <option value="quickbooks">QuickBooks</option>
+          <option value="xero">Xero</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h2>Expense Categories</h2>
+      <div class="categories-list" id="categoriesList">
+        <!-- Categories will be populated here -->
+      </div>
+      <div class="add-category">
+        <input type="text" id="newCategory" placeholder="New category name">
+        <button id="addCategory">Add Category</button>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <h2>Archived Receipts</h2>
+      <div class="archived-receipts-list" id="archivedReceiptsList">
+        <!-- Archived receipts will be populated here -->
+      </div>
+    </div>
+
+    <button id="saveSettings">Save All Settings</button>
+    <div id="statusMessage" class="status" style="display: none;"></div>
+  </div>
+  <script src="settings.js"></script>
+</body>
+</html> 
