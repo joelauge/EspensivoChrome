@@ -43,10 +43,10 @@ async function sendEmail(emailData) {
   formData.append('to', settings.expenseEmail);
   formData.append('subject', emailData.subject);
   formData.append('body', emailData.body);
-  formData.append('attachment', emailData.attachments[0].content, 'receipt.pdf');
+  formData.append('attachment', emailData.attachments[0].content, emailData.attachments[0].filename);
   
   // Send to your email service endpoint
-  const response = await fetch('https://espensivo.com/api/send-email', {
+  const response = await fetch('https://us-central1-espensivo.cloudfunctions.net/api/send-email', {
     method: 'POST',
     body: formData
   });

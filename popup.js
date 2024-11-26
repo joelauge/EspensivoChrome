@@ -100,7 +100,7 @@ async function loadReceipts() {
       <div class="receipt-item">
         <div class="receipt-row">
           <div class="image-preview" data-image="${receipt.image}">
-            <img src="${receipt.image}" alt="Receipt ${index + 1}" style="width: 30px; height: 30px; object-fit: cover; border-radius: 4px; cursor: pointer;">
+            <img src="${receipt.image}" alt="Receipt ${index + 1}" style="object-fit: cover; border-radius: 4px; cursor: pointer;">
           </div>
           <div class="actions">
             <button class="analyze-btn" data-index="${index}">Analyze</button>
@@ -303,3 +303,106 @@ console.log('Popup initialized');
 document.querySelectorAll('button, a').forEach(element => {
   console.log('Found clickable element:', element.id || element.className || element.tagName);
 });
+
+async function fileReceipt(index) {
+  try {
+    logDebug('Starting receipt filing process...', 'info');
+    
+    const storage = await chrome.storage.local.get(['capturedReceipts']);
+    const receipt = storage.capturedReceipts[index];
+    
+    if (!receipt || !receipt.analysis) {
+      throw new Error('Receipt or analysis not found');
+    }
+
+    // Get email settings
+    const settings = await chrome.storage.sync.get(['expenseEmail', 'serviceType']);
+    if (!settings.expenseEmail) {
+      throw new Error('Email not configured. Please check settings.');
+    }
+
+    // Create PDF using jsPDF global object
+    if (typeof window.jspdf === 'undefined') {
+      throw new Error('PDF library not loaded. Please refresh the page.');
+    }
+
+    const doc = new window.jspdf.jsPDF();
+    
+    // Add receipt image
+    const img = new Image();
+    await new Promise((resolve, reject) => {
+      img.onload = resolve;
+      img.onerror = reject;
+      img.src = receipt.image;
+    });
+    
+    // Calculate dimensions to fit the page
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const imgRatio = img.width / img.height;
+    let imgWidth = pageWidth - 40; // 20px margin on each side
+    let imgHeight = imgWidth / imgRatio;
+    
+    // Add receipt image
+    doc.addImage(receipt.image, 'PNG', 20, 20, imgWidth, imgHeight);
+    
+    // Add metadata below image
+    let y = imgHeight + 40;
+    doc.setFontSize(12);
+    doc.text(`Vendor: ${receipt.analysis.vendor}`, 20, y);
+    doc.text(`Amount: ${receipt.analysis.total}`, 20, y + 10);
+    doc.text(`Date: ${receipt.analysis.date}`, 20, y + 20);
+    doc.text(`Category: ${receipt.analysis.category}`, 20, y + 30);
+    if (receipt.analysis.payment_method) {
+      doc.text(`Payment Method: ${receipt.analysis.payment_method}`, 20, y + 40);
+    }
+    
+    // Convert PDF to blob
+    const pdfBlob = doc.output('blob');
+
+    // Prepare email data
+    const formData = new FormData();
+    formData.append('to', settings.expenseEmail);
+    formData.append('subject', `Expense Receipt - ${receipt.analysis.vendor} - ${receipt.analysis.total}`);
+    formData.append('body', `
+Receipt Details:
+Vendor: ${receipt.analysis.vendor}
+Amount: ${receipt.analysis.total}
+Date: ${receipt.analysis.date}
+Category: ${receipt.analysis.category}
+${receipt.analysis.payment_method ? `Payment Method: ${receipt.analysis.payment_method}` : ''}
+    `);
+    formData.append('attachment', pdfBlob, 'receipt.pdf');
+
+    // Send email
+    const response = await fetch('https://us-central1-espensivo.cloudfunctions.net/api/send-email', {
+      method: 'POST',
+      body: formData
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to send email');
+    }
+
+    // Show success message
+    const receiptItem = document.querySelector(`[data-index="${index}"]`).closest('.receipt-item');
+    const successMsg = document.createElement('div');
+    successMsg.className = 'success-message';
+    successMsg.innerHTML = `
+      <svg viewBox="0 0 20 20">
+        <path d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"/>
+      </svg>
+      Receipt filed successfully
+    `;
+    receiptItem.insertBefore(successMsg, receiptItem.firstChild);
+
+    // Remove success message after 3 seconds
+    setTimeout(() => {
+      successMsg.remove();
+    }, 3000);
+
+  } catch (error) {
+    logDebug(`Error filing receipt: ${error.message}`, 'error');
+    alert(`Failed to file receipt: ${error.message}`);
+  }
+}

@@ -2,6 +2,7 @@
 <html>
 <head>
   <title>Espensivo - Receipt to Expense</title>
+  <script src="lib/jspdf.umd.min.js"></script>
   <style>
     body {
       width: 400px;
@@ -164,32 +165,32 @@
       box-shadow: 0 2px 4px rgba(0,0,0,0.05);
     }
     .receipt-item .image-preview {
-      width: 100%;
-      height: 200px;
-      margin-bottom: 8px;
-      border-radius: 4px;
-      overflow: auto;
-      background: #f3f4f6;
-      cursor: grab;
-    }
+        width: 100%;
+        height: auto;  /* Changed from 100px */
+        margin-bottom: 8px;
+        border-radius: 4px;
+        overflow: auto;
+        background: #f3f4f6;
+        cursor: grab;
+}
     .receipt-item .image-preview:active {
       cursor: grabbing;
     }
     .receipt-item .image-preview img {
-      width: 100%;
-      height: auto;
-      max-height: none;
-      object-fit: contain;
-      object-position: top;
-      user-select: none;
-      -webkit-user-drag: none;
-    }
+    width: 100%;
+    height: auto;
+    max-width: auto;
+    object-fit: cover;
+    object-position: top;
+    user-select: none;
+    -webkit-user-drag: none;
+}
     .receipt-item .image-preview {
       scroll-behavior: smooth;
     }
     .receipt-item .image-preview::-webkit-scrollbar {
-      width: 0;
-      height: 0;
+    width: 0;
+    height: 0;
     }
     .receipt-item .header {
       display: flex;
@@ -450,7 +451,7 @@
   <div class="container">
     <div class="header">
       <div style="display: flex; align-items: center; gap: 8px;">
-        <img src="/images/icon128.png" alt="Espensivo Icon" style="width: 24px; height: 24px;">
+        <img src="/images/icon128.png" alt="Espensivo Icon" style="width: 50px; height: 50px;">
         <h2>Espensivo</h2>
       </div>
       <a href="#" id="settingsLink" class="settings-link">
@@ -477,7 +478,7 @@
   <!-- Add Modal HTML -->
   <div id="imageModal" class="modal-overlay">
     <div class="modal-content">
-      <button class="modal-close">&times;</button>
+      <button class="modal-close">X</button>
       <img class="modal-image" src="" alt="Full Receipt">
     </div>
   </div>
