@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Espensivo</title>
+  <title>Espensivo - Receipt to Expense</title>
   <style>
     body {
       width: 400px;
@@ -218,7 +218,7 @@
       background: #dc2626;
     }
     .receipt-item .actions .analyze-btn {
-      background: #059669;
+      background: #1d4ed8;
     }
     .receipt-item .actions .analyze-btn:hover {
       background: #047857;
@@ -373,7 +373,7 @@
     .category-selector select:focus {
       outline: none;
       border-color: #2563eb;
-      ring: 2px solid rgba(37, 99, 235, 0.2);
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
     }
 
     .analysis-row.category-selector {
@@ -454,15 +454,12 @@
         <h2>Espensivo</h2>
       </div>
       <a href="#" id="settingsLink" class="settings-link">
-        <svg class="settings-icon" viewBox="0 0 20 20" width="16" height="16">
-          <path d="M10 12a2 2 0 100-4 2 2 0 000 4z"/>
-          <path d="M17 10c0-.3-.1-.6-.2-.9l1.3-1.7c.3-.4.2-1-.2-1.3l-2-1.2c-.4-.3-1-.2-1.3.2l-1.3 1.7c-.6-.3-1.2-.4-1.8-.4-.6 0-1.2.1-1.8.4L8.4 5.1c-.3-.4-.9-.5-1.3-.2l-2 1.2c-.4.3-.5.9-.2 1.3l1.3 1.7c-.1.3-.2.6-.2.9s.1.6.2.9L4.9 12.6c-.3.4-.2 1 .2 1.3l2 1.2c.4.3 1 .2 1.3-.2l1.3-1.7c.6.3 1.2.4 1.8.4.6 0 1.2-.1 1.8-.4l1.3 1.7c.3.4.9.5 1.3.2l2-1.2c.4-.3.5-.9.2-1.3l-1.3-1.7c.1-.3.2-.6.2-.9z"/>
-        </svg>
         Settings
       </a>
     </div>
 
-    <button id="captureBtn">Drag your Mouse to Select your Receipt</button>
+    <button id="captureBtn">Click Here to Start Capturing Receipt
+    </button>
 
     <!-- Receipt List Section -->
     <div class="receipt-list">

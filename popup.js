@@ -1,4 +1,4 @@
-// Default expense categories
+// Add these at the top of popup.js
 const DEFAULT_CATEGORIES = [
   'Meals & Entertainment',
   'Travel',
@@ -12,62 +12,12 @@ const DEFAULT_CATEGORIES = [
   'Other'
 ];
 
-document.addEventListener('DOMContentLoaded', async () => {
-  const captureBtn = document.getElementById('captureBtn');
-  const debugPanel = document.getElementById('debugPanel');
-  const receiptsList = document.getElementById('receiptsList');
-  const settingsLink = document.getElementById('settingsLink');
-  
-  // Get debug panel and check settings
-  chrome.storage.sync.get(['showDebug'], (result) => {
-    if (debugPanel) {
-      debugPanel.style.display = result.showDebug ? 'block' : 'none';
-    }
-  });
-
-  // Add settings link handler
-  settingsLink.addEventListener('click', (e) => {
-    e.preventDefault();
-    chrome.tabs.create({
-      url: 'settings.html'
-    });
-  });
-
-  // Setup capture button handler
-  captureBtn.addEventListener('click', async () => {
-    try {
-      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-      
-      if (tab.url.startsWith('chrome://') || tab.url.startsWith('edge://')) {
-        throw new Error('Cannot capture from browser system pages');
-      }
-      
-      logDebug('Starting capture...', 'info');
-      
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files: ['selection.js']
-      });
-      
-      window.close(); // Close popup after initiating capture
-    } catch (error) {
-      logDebug(error, 'error');
-    }
-  });
-
-  // Load existing receipts
-  loadReceipts();
-
-  // Setup image modal
-  setupImageModal();
-});
-
 function logDebug(message, type = 'info') {
   const debugPanel = document.getElementById('debugPanel');
   if (!debugPanel) return;
   
   chrome.storage.sync.get(['showDebug'], (result) => {
-    if (!result.showDebug) return;
+    if (!result.showDebug && type !== 'error') return;
     
     const timestamp = new Date().toLocaleTimeString();
     const div = document.createElement('div');
@@ -77,7 +27,7 @@ function logDebug(message, type = 'info') {
     if (message instanceof Error) {
       div.textContent = `${timestamp}: ${message.name}: ${message.message}`;
       if (message.stack) {
-        console.error(message.stack); // Log stack trace to console
+        console.error(message.stack);
       }
     } else if (typeof message === 'object') {
       div.textContent = `${timestamp}: ${JSON.stringify(message, null, 2)}`;
@@ -98,28 +48,47 @@ function logDebug(message, type = 'info') {
       debugPanel.removeChild(debugPanel.lastChild);
     }
 
-    // Make sure debug panel is visible
-    debugPanel.style.display = 'block';
+    // Make sure debug panel is visible for errors
+    if (type === 'error') {
+      debugPanel.style.display = 'block';
+    } else {
+      debugPanel.style.display = result.showDebug ? 'block' : 'none';
+    }
   });
 }
 
-// Add error handlers for various operations
-window.onerror = function(msg, url, lineNo, columnNo, error) {
-  logDebug(`Global Error: ${msg}`, 'error');
-  return false;
-};
+// Add this function to handle receipt deletion
+async function deleteReceipt(index) {
+  if (!confirm('Are you sure you want to delete this receipt?')) return;
 
-// Add error handlers for unhandled promise rejections
-window.addEventListener('unhandledrejection', function(event) {
-  logDebug(`Unhandled Promise Rejection: ${event.reason}`, 'error');
-});
+  try {
+    const storage = await chrome.storage.local.get(['capturedReceipts']);
+    const receipts = storage.capturedReceipts || [];
+    receipts.splice(index, 1);
+    await chrome.storage.local.set({ capturedReceipts: receipts });
+    loadReceipts();
+  } catch (error) {
+    console.error('Failed to delete receipt:', error);
+  }
+}
 
+// Add this function to handle receipt viewing
+function viewReceipt(imageUrl) {
+  const modal = document.getElementById('imageModal');
+  const modalImage = modal.querySelector('.modal-image');
+  modalImage.src = imageUrl;
+  modal.classList.add('active');
+}
+
+// Add this function before the DOMContentLoaded event listener
 async function loadReceipts() {
   try {
     const receiptsList = document.getElementById('receiptsList');
     const storage = await chrome.storage.local.get(['capturedReceipts']);
-    const categoryStorage = await chrome.storage.sync.get(['expenseCategories']);
     const receipts = storage.capturedReceipts || [];
+
+    // Get categories for the dropdown
+    const categoryStorage = await chrome.storage.sync.get(['expenseCategories']);
     const categories = categoryStorage.expenseCategories || DEFAULT_CATEGORIES;
 
     if (receipts.length === 0) {
@@ -129,12 +98,14 @@ async function loadReceipts() {
 
     receiptsList.innerHTML = receipts.map((receipt, index) => `
       <div class="receipt-item">
-        <div class="image-preview" data-image="${receipt.image}">
-          <img src="${receipt.image}" alt="Receipt ${index + 1}">
-        </div>
-        <div class="actions">
-          <button class="analyze-btn" data-index="${index}">Analyze</button>
-          <button class="delete-btn" data-index="${index}">Delete</button>
+        <div class="receipt-row">
+          <div class="image-preview" data-image="${receipt.image}">
+            <img src="${receipt.image}" alt="Receipt ${index + 1}" style="width: 30px; height: 30px; object-fit: cover; border-radius: 4px; cursor: pointer;">
+          </div>
+          <div class="actions">
+            <button class="analyze-btn" data-index="${index}">Analyze</button>
+            <button class="delete-btn" data-index="${index}">Delete</button>
+          </div>
         </div>
         ${receipt.analysis ? `
           <div class="analysis">
@@ -166,7 +137,7 @@ async function loadReceipts() {
             </div>
             <div class="file-receipt-action">
               <button class="file-btn" data-index="${index}">
-                <svg class="file-icon" viewBox="0 0 20 20" width="20" height="20">
+                <svg class="file-icon" viewBox="0 0 20 20">
                   <path d="M10 12V4M10 12l-3-3M10 12l3-3M3 15v2a2 2 0 002 2h10a2 2 0 002-2v-2" stroke="currentColor" fill="none" stroke-width="2"/>
                 </svg>
                 File Receipt
@@ -199,9 +170,9 @@ async function loadReceipts() {
       });
     });
 
-    // Add event listener for file buttons
+    // Add event listeners for file buttons
     document.querySelectorAll('.file-btn').forEach(btn => {
-      btn.addEventListener('click', async (e) => {
+      btn.addEventListener('click', async () => {
         const index = parseInt(btn.dataset.index);
         await fileReceipt(index);
       });
@@ -213,61 +184,41 @@ async function loadReceipts() {
   }
 }
 
-function setupImageModal() {
-  const modal = document.getElementById('imageModal');
-  const modalImage = modal.querySelector('.modal-image');
-  const closeBtn = modal.querySelector('.modal-close');
-
-  closeBtn.addEventListener('click', () => {
-    modal.classList.remove('active');
+document.addEventListener('DOMContentLoaded', () => {
+  // Attach event listeners
+  document.getElementById('captureBtn').addEventListener('click', async () => {
+    const tab = await getCurrentTab();
+    const settings = await chrome.storage.sync.get(['expenseEmail', 'serviceType']);
+    
+    chrome.runtime.sendMessage({
+      action: 'startCapture',
+      tabId: tab.id,
+      settings: settings
+    });
   });
 
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) {
-      modal.classList.remove('active');
-    }
+  document.getElementById('settingsLink').addEventListener('click', (e) => {
+    e.preventDefault();
+    chrome.runtime.openOptionsPage();
   });
+
+  // Load any existing receipts
+  loadReceipts();
+});
+
+// Helper function to get current tab
+async function getCurrentTab() {
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  return tab;
 }
 
-function viewReceipt(imageUrl) {
-  const modal = document.getElementById('imageModal');
-  const modalImage = modal.querySelector('.modal-image');
-  modalImage.src = imageUrl;
-  modal.classList.add('active');
-}
-
-async function deleteReceipt(index) {
-  if (!confirm('Are you sure you want to delete this receipt?')) return;
-
-  try {
-    const storage = await chrome.storage.local.get(['capturedReceipts']);
-    const receipts = storage.capturedReceipts || [];
-    receipts.splice(index, 1);
-    await chrome.storage.local.set({ capturedReceipts: receipts });
-    loadReceipts();
-  } catch (error) {
-    console.error('Failed to delete receipt:', error);
-  }
-}
-
-// Update the analyze function to log API responses
 async function analyzeReceipt(index) {
   try {
     logDebug('Starting receipt analysis...', 'info');
     
     const storage = await chrome.storage.local.get(['capturedReceipts']);
-    const apiKeyStorage = await chrome.storage.sync.get(['anthropicKey']);
     const receipts = storage.capturedReceipts || [];
     const receipt = receipts[index];
-    const anthropicKey = apiKeyStorage.anthropicKey;
-
-    if (!anthropicKey) {
-      throw new Error('Please add your Anthropic API key in settings');
-    }
-
-    if (!anthropicKey.startsWith('sk-ant-')) {
-      throw new Error('Invalid API key format. Should start with "sk-ant-"');
-    }
 
     // Update UI to show processing
     const analyzeBtn = document.querySelector(`[data-index="${index}"].analyze-btn`);
@@ -276,76 +227,55 @@ async function analyzeReceipt(index) {
       analyzeBtn.disabled = true;
     }
 
-    // Properly format the image data
-    let base64Data = receipt.image;
-    if (base64Data.includes(',')) {
-      base64Data = base64Data.split(',')[1];
-    }
+    logDebug('Sending request to Espensivo API...', 'info');
 
-    // Call Anthropic API
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
+    // Update the URL to use the correct Firebase Functions endpoint
+    const response = await fetch('https://us-central1-espensivo.cloudfunctions.net/api/analyze', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-api-key': anthropicKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
+        'X-Client-Version': '1.0'
       },
+      mode: 'cors',
+      credentials: 'omit',
       body: JSON.stringify({
-        model: 'claude-3-haiku-20240307',
-        max_tokens: 1024,
-        system: "You are a receipt analysis expert. Extract key information from receipts and format it as JSON. For expense_category, choose from these exact options only: Meals & Entertainment, Travel, Office Supplies, Software & Subscriptions, Professional Services, Utilities, Marketing, Equipment, Training & Education, Other",
-        messages: [{
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              text: 'Please analyze this receipt image and extract the following information in JSON format: total_amount (with currency), date (in YYYY-MM-DD format), vendor_name, and expense_category (must be one of the predefined categories).'
-            },
-            {
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: 'image/png',
-                data: base64Data
-              }
-            }
-          ]
-        }]
+        image: receipt.image.split(',')[1],
+        timestamp: new Date().toISOString(),
+        metadata: {
+          imageSize: receipt.image.length,
+          userAgent: navigator.userAgent,
+          screenResolution: `${window.screen.width}x${window.screen.height}`
+        }
       })
     });
 
+    // Log the raw response for debugging
+    const responseText = await response.text();
+    logDebug(`Raw API Response: ${responseText}`, 'info');
+    
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      const errorMessage = errorData.error?.message || 'Unknown API error';
-      logDebug(`API Error (${response.status}): ${errorMessage}`, 'error');
-      throw new Error(`API error: ${response.status} - ${errorMessage}`);
+      throw new Error(`API error: ${response.status} - ${responseText}`);
     }
 
-    const analysisResult = await response.json();
-    logDebug('Analysis completed successfully', 'success');
-    logDebug(`Claude response: ${JSON.stringify(analysisResult, null, 2)}`, 'info');
-
-    // Parse the response and update receipt
-    let analysis;
+    // Try to parse the response as JSON
+    let analysisResult;
     try {
-      const responseText = analysisResult.content[0].text;
-      // Try to extract JSON from the response text
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      analysis = jsonMatch ? JSON.parse(jsonMatch[0]) : JSON.parse(responseText);
-    } catch (error) {
-      console.error('Parse error:', error);
-      throw new Error('Failed to parse Claude\'s response');
+      analysisResult = JSON.parse(responseText);
+    } catch (parseError) {
+      logDebug(`JSON Parse Error: ${parseError}`, 'error');
+      throw new Error('Failed to parse API response');
     }
+
+    logDebug('Analysis completed successfully', 'success');
 
     // Update receipt with analysis
     receipt.analysis = {
-      total: analysis.total_amount,
-      date: analysis.date,
-      vendor: analysis.vendor_name,
-      category: analysis.expense_category,
-      taxes: analysis.taxes || '$0.00',
-      payment_method: analysis.payment_method || 'N/A'
+      total: analysisResult.total_amount,
+      date: analysisResult.date,
+      vendor: analysisResult.vendor_name,
+      category: analysisResult.expense_category,
+      taxes: analysisResult.taxes || '$0.00',
+      payment_method: analysisResult.payment_method || 'N/A'
     };
 
     // Save updated receipt
@@ -354,104 +284,22 @@ async function analyzeReceipt(index) {
 
     // Refresh the list
     loadReceipts();
-    logDebug('Receipt analyzed successfully', 'success');
+    logDebug('Receipt analyzed and saved successfully', 'success');
 
   } catch (error) {
-    logDebug(error, 'error');
+    logDebug(`Analysis failed: ${error.message}`, 'error');
+    if (error.stack) {
+      logDebug(`Stack trace: ${error.stack}`, 'error');
+    }
     const analyzeBtn = document.querySelector(`[data-index="${index}"].analyze-btn`);
     if (analyzeBtn) {
       analyzeBtn.textContent = 'Retry Analysis';
       analyzeBtn.disabled = false;
     }
   }
-}
-
-async function fileReceipt(index) {
-  try {
-    logDebug('Starting receipt filing process...', 'info');
-    
-    const btn = document.querySelector(`[data-index="${index}"].file-btn`);
-    const originalText = btn.innerHTML;
-    
-    // Show loading state
-    btn.innerHTML = `
-      <div class="loading-spinner"></div>
-      Sending...
-    `;
-    btn.disabled = true;
-
-    // Get receipt and settings
-    const storage = await chrome.storage.local.get(['capturedReceipts']);
-    const settings = await chrome.storage.sync.get(['expenseEmail', 'serviceType']);
-    const receipt = storage.capturedReceipts[index];
-
-    if (!receipt.analysis) {
-      throw new Error('Please analyze the receipt first');
-    }
-
-    if (!settings.expenseEmail) {
-      throw new Error('Please configure email settings first');
-    }
-
-    logDebug(`Preparing email with receipt from ${receipt.analysis.vendor}...`, 'info');
-
-    // Prepare email data with PNG image
-    const emailData = {
-      to: settings.expenseEmail,
-      subject: `Expense Receipt - ${receipt.analysis.vendor} - ${receipt.analysis.total}`,
-      body: `
-Receipt Details:
---------------
-Vendor: ${receipt.analysis.vendor}
-Amount: ${receipt.analysis.total}
-Date: ${receipt.analysis.date}
-Category: ${receipt.analysis.category}
-${receipt.analysis.payment_method ? `Payment Method: ${receipt.analysis.payment_method}` : ''}
-Taxes: ${receipt.analysis.taxes || '$0.00'}
-
-This receipt was filed with Espensivo's Expense Receipt Chrome plugin. Get yours at https://espensivo.com
-      `,
-      attachments: [{
-        filename: 'receipt.png',
-        content: receipt.image.split(',')[1], // Remove the data:image/png;base64 prefix
-        contentType: 'image/png'
-      }]
-    };
-
-    logDebug(`Sending email to ${settings.expenseEmail} (${settings.serviceType})...`, 'info');
-
-    // Send the email
-    try {
-      const response = await sendEmail(emailData);
-      logDebug('Email sent successfully', 'success');
-    } catch (error) {
-      logDebug(`Email sending failed: ${error.message}`, 'error');
-      throw new Error(`Failed to send email: ${error.message}`);
-    }
-
-    // Show success message
-    btn.innerHTML = `
-      <svg class="file-icon" viewBox="0 0 20 20">
-        <path d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"/>
-      </svg>
-      Filed!
-    `;
-    
-    // Reset button after 3 seconds
-    setTimeout(() => {
-      btn.innerHTML = originalText;
-      btn.disabled = false;
-    }, 3000);
-
-  } catch (error) {
-    logDebug(error.message, 'error');
-    const btn = document.querySelector(`[data-index="${index}"].file-btn`);
-    btn.innerHTML = `
-      <svg class="file-icon" viewBox="0 0 20 20">
-        <path d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"/>
-      </svg>
-      Retry
-    `;
-    btn.disabled = false;
-  }
 } 
+
+console.log('Popup initialized');
+document.querySelectorAll('button, a').forEach(element => {
+  console.log('Found clickable element:', element.id || element.className || element.tagName);
+});

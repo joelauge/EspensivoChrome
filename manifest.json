@@ -10,7 +10,7 @@
     "tabs"
   ],
   "host_permissions": [
-    "https://espensivo.com/*",
+    "https://us-central1-espensivo.cloudfunctions.net/*",
     "https://mail.google.com/*",
     "https://api.anthropic.com/*"
   ],
@@ -36,5 +36,9 @@
       "lib/*"
     ],
     "matches": ["<all_urls>"]
-  }]
+  }],
+  "options_ui": {
+    "page": "settings.html",
+    "open_in_tab": true
+  }
 } 

@@ -23,14 +23,12 @@ const DEFAULT_CATEGORIES = [
 async function loadSettings() {
   try {
     const settings = await chrome.storage.sync.get([
-      'anthropicKey',
       'expenseEmail',
       'serviceType',
       'expenseCategories',
       'showDebug'
     ]);
 
-    document.getElementById('anthropicKey').value = settings.anthropicKey || '';
     document.getElementById('expenseEmail').value = settings.expenseEmail || '';
     document.getElementById('serviceType').value = settings.serviceType || 'quickbooks';
     document.getElementById('debugToggle').checked = settings.showDebug || false;
@@ -45,7 +43,6 @@ async function loadSettings() {
 
 async function saveAllSettings() {
   const settings = {
-    anthropicKey: document.getElementById('anthropicKey').value.trim(),
     expenseEmail: document.getElementById('expenseEmail').value.trim(),
     serviceType: document.getElementById('serviceType').value,
     showDebug: document.getElementById('debugToggle').checked,
@@ -54,11 +51,6 @@ async function saveAllSettings() {
       .filter(Boolean)
   };
 
-  // Validate Anthropic key format
-  if (settings.anthropicKey && !settings.anthropicKey.startsWith('sk-ant-')) {
-    showStatus('Invalid Anthropic API key format. Should start with "sk-ant-"', 'error');
-    return;
-  }
 
   // Validate email if using custom service type
   if (settings.serviceType === 'custom' && !settings.expenseEmail) {
@@ -113,11 +105,18 @@ function deleteCategory(index) {
 }
 
 function showStatus(message, type) {
-  const statusEl = document.getElementById('statusMessage');
-  statusEl.textContent = message;
-  statusEl.className = `status ${type}`;
-  statusEl.style.display = 'block';
+  const notificationBar = document.getElementById('notificationBar');
+  const notificationText = document.getElementById('notificationText');
+  
+  notificationText.textContent = message;
+  notificationBar.style.background = type === 'error' ? '#fee2e2' : '#dcfce7';
+  notificationBar.style.color = type === 'error' ? '#991b1b' : '#166534';
+  
+  // Show notification
+  notificationBar.classList.add('show');
+  
+  // Hide after 3 seconds
   setTimeout(() => {
-    statusEl.style.display = 'none';
+    notificationBar.classList.remove('show');
   }, 3000);
 } 
