@@ -1,4 +1,4 @@
-const functions = require("firebase-functions");
+const { onRequest } = require("firebase-functions/v2/https");
 const express = require("express");
 const cors = require("cors");
 const rateLimit = require("express-rate-limit");
@@ -22,7 +22,12 @@ try {
 exports.api = {};
 
 // Add the handler
-exports.api.handler = functions.https.onRequest(async (req, res) => {
+exports.analyze = onRequest({
+  environmentVariables: ['ANTHROPIC_API_KEY'],
+  memory: '256MB',
+  timeoutSeconds: 60,
+  cors: true
+}, async (req, res) => {
   console.log('Received request:', {
     path: req.path,
     method: req.method,
@@ -70,7 +75,7 @@ exports.api.handler = functions.https.onRequest(async (req, res) => {
   }
 
   // Only handle POST requests to /analyze
-  if (req.path !== '/analyze' || req.method !== 'POST') {
+  if (req.method !== 'POST') {
     console.log('Invalid path or method:', { path: req.path, method: req.method });
     res.status(404).json({
       success: false,
@@ -91,10 +96,11 @@ exports.api.handler = functions.https.onRequest(async (req, res) => {
 
     // Check for API key
     const apiKey = process.env.ANTHROPIC_API_KEY;
-    console.log('API Key available:', !!apiKey);
     if (!apiKey) {
+      console.error('ANTHROPIC_API_KEY environment variable not set');
       throw new Error('Anthropic API key not configured');
     }
+    console.log('API Key available:', !!apiKey);
 
     console.log('Making Anthropic API request...');
     const headers = {
@@ -163,6 +169,53 @@ exports.api.handler = functions.https.onRequest(async (req, res) => {
     res.status(500).json({
       success: false,
       error: error.message
+    });
+  }
+});
+
+exports.email = onRequest(async (req, res) => {
+  try {
+    const { to, subject, body, attachment } = req.body;
+
+    // Prepare the email data for Elastic Email API
+    const emailData = {
+      Recipients: [{ Email: to }],
+      Subject: subject,
+      Body: [{
+        ContentType: "HTML",
+        Content: body
+      }],
+      Attachments: [{
+        BinaryContent: attachment.content,
+        Name: "receipt.png",
+        ContentType: "image/png"
+      }]
+    };
+
+    // Send via Elastic Email API
+    const response = await fetch('https://api.elasticemail.com/v4/emails/transactional', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-ElasticEmail-ApiKey': process.env.ELASTIC_EMAIL_API_KEY || '9832415EEE54D602A0E80C860017668295C2'
+      },
+      body: JSON.stringify(emailData)
+    });
+
+    // Log response for debugging
+    const responseText = await response.text();
+    console.log('Elastic Email API response:', responseText);
+
+    if (!response.ok) {
+      throw new Error(`Elastic Email API error: ${response.statusText} - ${responseText}`);
+    }
+
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Email sending failed:', error);
+    res.status(500).json({ 
+      success: false, 
+      error: { message: error.message } 
     });
   }
 });

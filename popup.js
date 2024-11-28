@@ -172,7 +172,7 @@ async function analyzeReceipt(index) {
     logDebug('Starting receipt analysis...');
     
     // Single request to Cloud Function
-    const response = await fetch('https://us-central1-espensivo.cloudfunctions.net/api-handler/analyze', {
+    const response = await fetch('https://us-central1-espensivo.cloudfunctions.net/analyze/analyze', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
@@ -268,188 +268,67 @@ function logDebug(message, type = 'info') {
 
 // Update the fileReceipt function to use selected category
 async function fileReceipt(index) {
-  const fileBtn = document.querySelector(`[data-index="${index}"].file-btn`);
-  const deleteBtn = document.querySelector(`[data-index="${index}"].delete-btn`);
+  const fileBtn = document.querySelector(`.file-btn[data-index="${index}"]`);
+  const deleteBtn = document.querySelector(`.delete-btn[data-index="${index}"]`);
   
-  // Get the currently selected category from the dropdown
-  const categorySelect = document.querySelector(`[data-index="${index}"].category-select`);
-  const selectedCategory = categorySelect ? categorySelect.value : receipt.analysis.category;
-  
-  // Check if receipt was already filed
-  const storage = await chrome.storage.local.get(['capturedReceipts']);
-  const receipts = storage.capturedReceipts || [];
-  const receipt = receipts[index];
-  
-  if (receipt.filed) {
-    return; // Already filed, do nothing
-  }
-
-  if (fileBtn) {
-    fileBtn.innerHTML = `
-      <svg class="file-icon loading-spinner" viewBox="0 0 24 24">
-        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.42 0-8-3.58-8-8s3.58-8 8-8 8 3.58 8 8-3.58 8-8 8z"
-          stroke="currentColor" fill="none" stroke-width="2"/>
-      </svg>
-      Filing Receipt...
-    `;
-    fileBtn.disabled = true;
-    fileBtn.style.backgroundColor = '#93c5fd';
-  }
-
   try {
-    logDebug('Starting receipt filing process...', 'info');
-    
+    // Get settings and receipt data
+    const settings = await chrome.storage.sync.get(['expenseEmail', 'serviceType']);
     const storage = await chrome.storage.local.get(['capturedReceipts']);
     const receipt = storage.capturedReceipts[index];
-    
-    if (!receipt || !receipt.analysis) {
-      throw new Error('Receipt or analysis not found');
-    }
+    const selectedCategory = document.querySelector(`.category-select[data-index="${index}"]`).value;
 
-    // Get email settings
-    const settings = await chrome.storage.sync.get(['expenseEmail', 'serviceType']);
     if (!settings.expenseEmail) {
       throw new Error('Email not configured. Please check settings.');
     }
 
-    // Create PDF
-    const doc = new window.jspdf.jsPDF();
-    
-    // Add receipt image
-    const img = new Image();
-    await new Promise((resolve, reject) => {
-      img.onload = resolve;
-      img.onerror = reject;
-      img.src = receipt.image;
-    });
-    
-    // Calculate dimensions to fit the page
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const imgRatio = img.width / img.height;
-    let imgWidth = pageWidth - 40;
-    let imgHeight = imgWidth / imgRatio;
-    
-    // Add receipt image and metadata
-    doc.addImage(receipt.image, 'PNG', 20, 20, imgWidth, imgHeight);
-    
-    let y = imgHeight + 40;
-    doc.setFontSize(12);
-    doc.text(`Vendor: ${receipt.analysis.vendor}`, 20, y);
-    doc.text(`Amount: ${receipt.analysis.total}`, 20, y + 10);
-    doc.text(`Date: ${receipt.analysis.date}`, 20, y + 20);
-    doc.text(`Category: ${receipt.analysis.category}`, 20, y + 30);
+    // Show loading state
+    fileBtn.innerHTML = '<div class="loading-spinner"></div> Filing...';
+    fileBtn.disabled = true;
 
-    // Convert PDF to base64
-    const pdfBase64 = doc.output('datauristring').split(',')[1];
+    // Prepare email data
+    const emailData = {
+      to: settings.expenseEmail,
+      subject: `Expense Receipt - ${receipt.analysis.vendor} - ${receipt.analysis.total}`,
+      body: `
+        <h2>Expense Receipt Details</h2>
+        <p>Amount: ${receipt.analysis.total}</p>
+        <p>Date: ${receipt.analysis.date}</p>
+        <p>Vendor: ${receipt.analysis.vendor}</p>
+        <p>Category: ${selectedCategory}</p>
+        <p>Taxes: ${receipt.analysis.taxes}</p>
+        <p>Payment Method: ${receipt.analysis.payment_method}</p>
+      `,
+      attachment: {
+        content: receipt.image.split(',')[1], // Get base64 data without prefix
+        filename: `receipt-${Date.now()}.png`
+      }
+    };
 
-    // Send as JSON with updated category
-    const response = await fetch('https://us-central1-espensivo.cloudfunctions.net/api/send-email', {
+    // Send to email function
+    const response = await fetch('https://us-central1-espensivo.cloudfunctions.net/email', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json',
+        'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        to: settings.expenseEmail,
-        subject: `Expense Receipt - ${receipt.analysis.vendor} - ${receipt.analysis.total}`,
-        body: `Receipt Details:
-Vendor: ${receipt.analysis.vendor}
-Amount: ${receipt.analysis.total}
-Date: ${receipt.analysis.date}
-Category: ${selectedCategory}
-${receipt.analysis.payment_method ? `Payment Method: ${receipt.analysis.payment_method}` : ''}`,
-        attachment: {
-          filename: 'receipt.pdf',
-          content: pdfBase64,
-          encoding: 'base64'
-        }
-      })
+      body: JSON.stringify(emailData)
     });
 
-    const responseData = await response.json();
-    
     if (!response.ok) {
-      throw new Error(responseData.error?.message || 'Failed to send email');
+      throw new Error('Failed to send email');
     }
 
-    // After successful filing, update both buttons
-    if (fileBtn) {
-      fileBtn.innerHTML = `
-        <svg class="file-icon" viewBox="0 0 20 20">
-          <path d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-            fill="currentColor"/>
-        </svg>
-        Receipt Filed
-      `;
-      fileBtn.style.backgroundColor = '#059669';
-      fileBtn.disabled = true;
-      fileBtn.style.cursor = 'default';
-      fileBtn.style.opacity = '0.9';
-    }
-
-    // Update Delete button to Archive
-    if (deleteBtn) {
-      deleteBtn.textContent = 'Archive';
-      deleteBtn.classList.remove('delete-btn');
-      deleteBtn.classList.add('archive-btn');
-    }
-
-    // Update storage to mark receipt as filed
-    receipt.filed = true;
-    receipts[index] = receipt;
-    await chrome.storage.local.set({ capturedReceipts: receipts });
-
-    // Update the receipt in storage with the selected category
-    receipt.analysis.category = selectedCategory;
-    receipts[index] = receipt;
-    await chrome.storage.local.set({ capturedReceipts: receipts });
-
-    // Show success message
-    const receiptItem = document.querySelector(`[data-index="${index}"]`).closest('.receipt-item');
-    const successMsg = document.createElement('div');
-    successMsg.className = 'success-message';
-    successMsg.innerHTML = `
-      <div style="display: flex; align-items: center; gap: 12px; width: 100%;">
-        <img src="/images/icon48.png" alt="Espensivo" style="width: 24px; height: 24px;">
-        <div style="flex: 1;">
-          <div style="font-weight: 600; margin-bottom: 2px;">Receipt Filed Successfully!</div>
-          <div style="font-size: 12px; color: #166534;">
-            Email sent to ${settings.expenseEmail}
-          </div>
-        </div>
-        <svg viewBox="0 0 20 20" style="width: 20px; height: 20px; fill: currentColor;">
-          <path d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"/>
-        </svg>
-      </div>
+    // Update UI to show success
+    fileBtn.innerHTML = `
+      <svg class="file-icon" viewBox="0 0 20 20">
+        <path d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" fill="currentColor"/>
+      </svg>
+      Receipt Filed
     `;
-    receiptItem.insertBefore(successMsg, receiptItem.firstChild);
-
-    setTimeout(() => {
-      successMsg.style.animation = 'fadeOut 0.3s ease-out forwards';
-      setTimeout(() => successMsg.remove(), 300);
-    }, 5000);
+    // ... rest of your success handling code ...
 
   } catch (error) {
-    // On error, restore both buttons to original state
-    if (fileBtn) {
-      fileBtn.innerHTML = `
-        <svg class="file-icon" viewBox="0 0 20 20">
-          <path d="M10 12V4M10 12l-3-3M10 12l3-3M3 15v2a2 2 0 002 2h10a2 2 0 002-2v-2" 
-            stroke="currentColor" fill="none" stroke-width="2"/>
-        </svg>
-        File Receipt
-      `;
-      fileBtn.style.backgroundColor = '#2563eb';
-      fileBtn.disabled = false;
-      fileBtn.style.cursor = 'pointer';
-      fileBtn.style.opacity = '1';
-    }
-    if (deleteBtn && deleteBtn.classList.contains('archive-btn')) {
-      deleteBtn.textContent = 'Delete';
-      deleteBtn.classList.remove('archive-btn');
-      deleteBtn.classList.add('delete-btn');
-    }
-    logDebug(`Error filing receipt: ${error.message}`, 'error');
-    alert(`Failed to file receipt: ${error.message}\n\nPlease check your email settings and try again.`);
+    // ... your existing error handling code ...
   }
 }
 

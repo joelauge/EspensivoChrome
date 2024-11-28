@@ -32,7 +32,12 @@
         "timeout": "10s",
         "retries": 3
       }
-    }
+    },
+    "secrets": [
+      "ELASTIC_EMAIL_USERNAME",
+      "ELASTIC_EMAIL_SMTP_PASSWORD",
+      "ELASTIC_EMAIL_FROM_ADDRESS"
+    ]
   },
   "firestore": {
     "rules": "firestore.rules",
