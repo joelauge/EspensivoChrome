@@ -45,12 +45,24 @@ const limiter = rateLimit({
 // Apply rate limiting to all routes
 app.use(limiter);
 
-// Configure CORS to only accept requests from your extension
+// Configure CORS to accept requests from your extension
 app.use(cors({
-  origin: ['chrome-extension://your-extension-id'],
-  methods: ['POST'],
-  allowedHeaders: ['Content-Type', 'X-Client-Version']
+  origin: [
+    'chrome-extension://kaijibinmccffbklpdpfchdmopjmlden',  // Your extension ID
+    'chrome-extension://localhost'  // For local development
+  ],
+  methods: ['POST', 'OPTIONS'],  // Add OPTIONS for preflight
+  allowedHeaders: [
+    'Content-Type',
+    'x-client-version',
+    'x-extension-id'
+  ],
+  credentials: true,
+  optionsSuccessStatus: 200
 }));
+
+// Add preflight handler
+app.options('*', cors());  // Enable preflight for all routes
 
 app.use(bodyParser.json({ limit: '10mb' })); // Increase limit for base64 images
 

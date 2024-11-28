@@ -1,3 +1,4 @@
 node_modules/
 .env
 *.log 
+functions/service-account-key.json

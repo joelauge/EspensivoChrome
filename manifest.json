@@ -1,18 +1,19 @@
 {
   "name": "Espensivo - Receipt to Expense",
   "version": "1.0",
-  "description": "Convert receipts and invoices to expenses in Quickbooks/Xero via email",
+  "description": "Capture and convert receipts and invoices to expenses in Quickbooks/Xero in seconds.",
   "manifest_version": 3,
   "permissions": [
-    "activeTab",
     "storage",
-    "scripting",
-    "tabs"
+    "tabs",
+    "activeTab",
+    "scripting"
   ],
   "host_permissions": [
     "https://us-central1-espensivo.cloudfunctions.net/*",
     "https://mail.google.com/*",
-    "https://api.anthropic.com/*"
+    "https://api.anthropic.com/*",
+    "https://js.stripe.com/*"
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"

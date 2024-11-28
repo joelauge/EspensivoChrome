@@ -3,244 +3,166 @@ const express = require("express");
 const cors = require("cors");
 const rateLimit = require("express-rate-limit");
 const nodemailer = require('nodemailer');
-const { onRequest } = require("firebase-functions/v2/https");
 const multer = require('multer');
+const Stripe = require('stripe');
 const upload = multer({ storage: multer.memoryStorage() });
+const admin = require('firebase-admin');
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+require('dotenv').config();
 
-const app = express();
+// Initialize Firebase Admin
+try {
+  admin.initializeApp();
+  console.log('Firebase Admin initialized');
+} catch (error) {
+  console.error('Firebase Admin initialization error:', error);
+}
 
-// Enable trust proxy to work with Firebase Functions
-app.set('trust proxy', 1);
+// Initialize the api object
+exports.api = {};
 
-// Configure CORS with your actual extension ID
-app.use(cors({
-  origin: ["chrome-extension://kaijibinmccffbklpdpfchdmopjmlden"],
-  methods: ["POST", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "X-Client-Version"],
-  optionsSuccessStatus: 200,
-  credentials: false
-}));
+// Add the handler
+exports.api.handler = functions.https.onRequest(async (req, res) => {
+  console.log('Received request:', {
+    path: req.path,
+    method: req.method,
+    headers: req.headers,
+    bodyLength: req.body ? JSON.stringify(req.body).length : 0
+  });
 
-// Configure rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // Limit each IP to 100 requests per windowMs
-  standardHeaders: true,
-  legacyHeaders: false,
-  handler: (req, res) => {
-    console.error('Rate limit exceeded:', {
-      ip: req.ip,
-      realIP: req.headers['x-real-ip'],
-      forwardedFor: req.headers['x-forwarded-for'],
-      timestamp: new Date().toISOString()
-    });
-    res.status(429).json({
-      error: {
-        message: 'Too many requests, please try again later',
-        timestamp: new Date().toISOString()
+  // Enable CORS
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+
+  // Handle preflight
+  if (req.method === 'OPTIONS') {
+    console.log('Handling OPTIONS request');
+    res.status(204).send('');
+    return;
+  }
+
+  // Handle token request
+  if (req.path === '/token' && req.method === 'POST') {
+    try {
+      const { extensionId, timestamp } = req.body;
+      
+      if (!extensionId) {
+        throw new Error('Extension ID is required');
       }
+      
+      // Generate a temporary token (valid for 5 minutes)
+      const token = Buffer.from(`${extensionId}:${Date.now()}`).toString('base64');
+      
+      res.json({
+        token,
+        anthropicEndpoint: 'https://api.anthropic.com/v1/messages'
+      });
+      return;
+    } catch (error) {
+      console.error('Token generation error:', error);
+      res.status(500).json({
+        success: false,
+        error: error.message
+      });
+      return;
+    }
+  }
+
+  // Only handle POST requests to /analyze
+  if (req.path !== '/analyze' || req.method !== 'POST') {
+    console.log('Invalid path or method:', { path: req.path, method: req.method });
+    res.status(404).json({
+      success: false,
+      error: 'Not found'
     });
+    return;
   }
-});
 
-app.use(limiter);
-
-// Define the API key at the top level
-const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || functions.config().anthropic.key;
-
-// Create SMTP transporter with ElasticEmail settings
-const transporter = nodemailer.createTransport({
-  host: 'smtp.elasticemail.com',
-  port: 2525,
-  secure: false,
-  auth: {
-    user: 'updateemailserver@espensivo.com',
-    pass: '9832415EEE54D602A0E80C860017668295C2'
-  }
-});
-
-// Your analyze endpoint
-app.post("/analyze", async (req, res) => {
   try {
-    const { image, timestamp, metadata } = req.body;
+    const { image } = req.body;
+    console.log('Request body keys:', Object.keys(req.body));
+    if (!image) {
+      console.log('No image data in request body:', req.body);
+      throw new Error('No image data provided');
+    }
 
-    console.log('Starting analysis request:', {
-      timestamp,
-      metadata
-    });
+    console.log('Calling Anthropic API with image data length:', image.length);
 
-    // Call Anthropic API with secured key
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": ANTHROPIC_API_KEY,
-        "anthropic-version": "2023-06-01",
-        "anthropic-dangerous-direct-browser-access": "true",
-      },
+    // Check for API key
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    console.log('API Key available:', !!apiKey);
+    if (!apiKey) {
+      throw new Error('Anthropic API key not configured');
+    }
+
+    console.log('Making Anthropic API request...');
+    const headers = {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01'
+    };
+    console.log('Request headers:', headers);
+
+    // Call Anthropic API
+    const anthropicResponse = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers,
       body: JSON.stringify({
-        model: "claude-3-haiku-20240307",
+        model: 'claude-3-haiku-20240307',
         max_tokens: 1024,
         system: "You are a receipt analysis expert. Extract key information from receipts and format it as JSON.",
         messages: [{
-          role: "user",
+          role: 'user',
           content: [
             {
-              type: "text",
-              text: "Please analyze this receipt image and extract the following information in JSON format: total_amount (with currency), date (in YYYY-MM-DD format), vendor_name, and expense_category.",
+              type: 'text',
+              text: 'Please analyze this receipt image and extract the following information in JSON format: total_amount (with currency), date (in YYYY-MM-DD format), vendor_name, and expense_category.'
             },
             {
-              type: "image",
+              type: 'image',
               source: {
-                type: "base64",
-                media_type: "image/png",
-                data: image,
-              },
-            },
-          ],
-        }],
-      }),
+                type: 'base64',
+                media_type: 'image/png',
+                data: image
+              }
+            }
+          ]
+        }]
+      })
     });
 
-    if (!response.ok) {
-      console.error('Anthropic API error:', {
-        status: response.status,
-        statusText: response.statusText,
-        headers: response.headers
-      });
-      throw new Error(`Anthropic API error: ${response.status}`);
+    console.log('Anthropic API response status:', anthropicResponse.status);
+    console.log('Anthropic API response headers:', Object.fromEntries(anthropicResponse.headers));
+
+    if (!anthropicResponse.ok) {
+      const errorText = await anthropicResponse.text();
+      console.error('Anthropic API error details:', errorText);
+      throw new Error(`Anthropic API error: ${anthropicResponse.status} - ${errorText}`);
     }
 
-    const analysisResult = await response.json();
-    
-    // Log the full Claude response
-    console.log('Full Claude Response:', JSON.stringify(analysisResult, null, 2));
-    
-    // Extract JSON from Claude's response
-    const jsonMatch = analysisResult.content[0].text.match(/\{[\s\S]*\}/);
+    const analysisResult = await anthropicResponse.json();
+    console.log('Successfully received Anthropic analysis');
+
+    // Extract the JSON from Anthropic's text response
+    const jsonText = analysisResult.content[0].text;
+    const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
     if (!jsonMatch) {
-      console.error('No JSON found in response:', analysisResult.content[0].text);
-      throw new Error('No JSON found in response');
+      throw new Error('Could not find JSON in Anthropic response');
     }
-
+    
     const extractedData = JSON.parse(jsonMatch[0]);
-    console.log('Extracted Data:', extractedData);
-    
-    res.json(extractedData);
 
-  } catch (error) {
-    console.error("Analysis failed:", error);
-    res.status(500).json({
-      error: {
-        message: "Analysis failed: " + error.message,
-        timestamp: new Date().toISOString(),
-      },
-    });
-  }
-});
-
-// Update the send-email endpoint to use multer
-app.post("/send-email", upload.single('attachment'), async (req, res) => {
-  const startTime = Date.now();
-  console.log('Email request received at:', new Date().toISOString());
-  
-  try {
-    console.log('Parsing form data...');
-    const { to, subject, body } = req.body;
-    const attachment = req.file;
-
-    console.log('Email request details:', {
-      to: to,
-      subject: subject,
-      bodyLength: body?.length,
-      hasAttachment: !!attachment,
-      attachmentSize: attachment?.size || 'no attachment',
-      contentType: attachment?.mimetype,
-      headers: req.headers
-    });
-
-    // Validate inputs
-    if (!to || !subject || !body || !attachment) {
-      console.error('Missing required fields:', {
-        hasTo: !!to,
-        hasSubject: !!subject,
-        hasBody: !!body,
-        hasAttachment: !!attachment
-      });
-      throw new Error('Missing required email fields');
-    }
-
-    console.log('Creating email with attachment...');
-    
-    // Log SMTP configuration
-    console.log('SMTP Configuration:', {
-      host: 'smtp.elasticemail.com',
-      port: 2525,
-      secure: false,
-      hasAuth: !!(process.env.SMTP_USERNAME && process.env.SMTP_PASSWORD)
-    });
-
-    // Send email using SMTP with detailed logging
-    console.log('Attempting to send email via SMTP...');
-    const info = await transporter.sendMail({
-      from: '"Espensivo Receipts" <receipts@espensivo.com>',
-      to: to,
-      subject: subject,
-      text: body,
-      attachments: [{
-        filename: 'receipt.pdf',
-        content: attachment.buffer,
-        contentType: 'application/pdf'
-      }]
-    });
-
-    const endTime = Date.now();
-    console.log('Email sent successfully:', {
-      messageId: info.messageId,
-      response: info.response,
-      processingTime: endTime - startTime + 'ms',
-      timestamp: new Date().toISOString()
-    });
-
-    res.json({ 
-      success: true, 
-      messageId: info.messageId,
-      processingTime: endTime - startTime
+    res.json({
+      success: true,
+      data: extractedData
     });
 
   } catch (error) {
-    console.error('Email sending failed:', {
-      timestamp: new Date().toISOString(),
-      error: {
-        name: error.name,
-        message: error.message,
-        stack: error.stack,
-        code: error.code,
-        command: error.command,
-        responseCode: error.responseCode,
-        response: error.response
-      },
-      requestInfo: {
-        headers: req.headers,
-        url: req.url,
-        method: req.method
-      }
-    });
-
+    console.error('Analysis error:', error);
     res.status(500).json({
-      error: {
-        message: 'Failed to send email: ' + error.message,
-        details: error.stack,
-        code: error.code,
-        timestamp: new Date().toISOString()
-      }
+      success: false,
+      error: error.message
     });
   }
 });
-
-// Export with secrets configuration
-exports.api = onRequest({ 
-  secrets: ["ANTHROPIC_API_KEY"],
-  region: 'us-central1',
-  memory: '256MiB'
-}, app);

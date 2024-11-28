@@ -51,4 +51,22 @@ function showAnalysisResults(analysis) {
   `;
 
   document.body.appendChild(resultsDiv);
+}
+
+// Add validation checks
+function validateReceipt(analysis) {
+  const issues = [];
+  
+  if (!analysis.total_amount || analysis.total_amount <= 0) {
+    issues.push('Invalid total amount');
+  }
+  
+  if (!analysis.date || new Date(analysis.date) > new Date()) {
+    issues.push('Invalid or future date');
+  }
+  
+  return {
+    isValid: issues.length === 0,
+    issues
+  };
 } 

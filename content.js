@@ -49,12 +49,44 @@ function handleMouseMove(e) {
 }
 
 async function handleMouseUp(e) {
-  if (!isSelecting || !selectionBox) return;
+  if (!isSelecting) return;
   
-  // Calculate final dimensions
-  const bounds = selectionBox.getBoundingClientRect();
+  const width = Math.abs(e.clientX - startX);
+  const height = Math.abs(e.clientY - startY);
   
-  // Capture the screen
+  if (width < 10 || height < 10) {
+    resetCapture();
+    return;
+  }
+  
+  // Store the bounds
+  const bounds = {
+    x: parseInt(selectionBox.style.left),
+    y: parseInt(selectionBox.style.top),
+    width: parseInt(selectionBox.style.width),
+    height: parseInt(selectionBox.style.height)
+  };
+
+  // Remove ALL selection UI elements
+  const container = selectionBox.parentElement;
+  if (container) {
+    // Remove all child elements first
+    while (container.firstChild) {
+      container.firstChild.remove();
+    }
+    // Then remove the container itself
+    container.remove();
+  }
+
+  // Reset cursor and selection state
+  document.body.style.cursor = 'default';
+  isSelecting = false;
+  selectionBox = null;
+
+  // Small delay to ensure UI is completely gone
+  await new Promise(resolve => setTimeout(resolve, 100));
+  
+  // Now take the screenshot
   chrome.runtime.sendMessage({
     action: 'captureArea',
     area: {
@@ -66,26 +98,35 @@ async function handleMouseUp(e) {
     }
   });
 
-  // Clean up
-  cleanupSelection();
+  // Show notification
+  showNotification('Receipt captured! Opening Espensivo...');
 }
 
-function cleanupSelection() {
-  isSelecting = false;
+function resetCapture() {
+  // Clean up selection box if it exists
   if (selectionBox) {
     selectionBox.remove();
     selectionBox = null;
   }
+  
+  // Reset selection state
+  isSelecting = false;
+  startX = null;
+  startY = null;
+  
+  // Remove event listeners
   document.removeEventListener('mousemove', handleMouseMove);
   document.removeEventListener('mouseup', handleMouseUp);
-  document.body.style.cursor = 'default';
+  
+  // Log debug info
+  console.log('Selection reset via Escape key');
 }
 
-// Listen for messages from popup
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.action === 'startCapture') {
-    isSelecting = true;
-    document.body.style.cursor = 'crosshair';
-    document.addEventListener('mousedown', handleMouseDown);
-  }
-}); 
+function showNotification(message, type = 'success') {
+  // ... existing notification code ...
+
+  // Open sidepanel instead of popup
+  chrome.runtime.sendMessage({ 
+    action: 'captureSuccess'
+  });
+} 

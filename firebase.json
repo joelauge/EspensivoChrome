@@ -9,15 +9,33 @@
     "rewrites": [
       {
         "source": "/api/**",
-        "function": "api"
+        "function": "api",
+        "region": "us-central1"
       }
     ]
   },
   "functions": {
     "source": "functions",
-    "runtime": "nodejs18",
+    "runtime": "nodejs20",
+    "region": "us-central1",
+    "environmentVariables": {
+      "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}"
+    },
+    "codebase": "default",
+    "gen": 1,
     "minInstances": 0,
-    "maxInstances": 100,
-    "memory": "256MB"
+    "maxInstances": 10,
+    "docker": {
+      "healthCheck": {
+        "path": "/health",
+        "interval": "30s",
+        "timeout": "10s",
+        "retries": 3
+      }
+    }
+  },
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
   }
 }

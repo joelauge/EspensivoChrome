@@ -1,5 +1,12 @@
 {
   "projects": {
-    "default": "your-firebase-project-id"
+    "default": "espensivo"
+  },
+  "targets": {
+    "espensivo": {
+      "hosting": {
+        "api": ["espensivo"]
+      }
+    }
   }
 }

@@ -1,0 +1,8 @@
+[
+  {
+    "origin": ["chrome-extension://kaijibinmccffbklpdpfchdmopjmlden"],
+    "method": ["POST", "OPTIONS"],
+    "responseHeader": ["Content-Type", "x-api-key", "anthropic-version"],
+    "maxAgeSeconds": 3600
+  }
+] 

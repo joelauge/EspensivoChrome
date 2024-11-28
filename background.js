@@ -1,24 +1,66 @@
-// Add this near the top of your background.js
-const MOCK_MODE = false; // Set to false when ready for production
-
-// Store captured data temporarily in background script
-let lastCapturedImage = null;
-
-// Make sure the service worker activates immediately
-self.addEventListener('activate', (event) => {
-  event.waitUntil(clients.claim());
+// Add at the top of the file
+chrome.runtime.onInstalled.addListener((details) => {
+  console.log('Extension installed:', details.reason);
+  
+  // Initialize any required storage
+  chrome.storage.local.get(['capturedReceipts'], (result) => {
+    if (!result.capturedReceipts) {
+      chrome.storage.local.set({ capturedReceipts: [] });
+    }
+  });
 });
 
-// Handle screenshot capture and processing
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  console.log('Background received message:', request.action); // Debug log
+// Initialize background service worker
+(() => {
+  // Store captured data temporarily in background script
+  let lastCapturedImage = null;
 
-  if (request.action === "startCapture") {
-    console.log('Starting capture for tab:', request.tabId); // Debug log
+  console.log('Background script loading...'); // Debug log
+
+  // Main message handler
+  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+    console.log('Background received message:', request.action);
+    
+    try {
+      switch (request.action) {
+        case "startCapture":
+          handleStartCapture(request, sender, sendResponse);
+          break;
+        case "captureRegion":
+          handleCaptureRegion(request, sender, sendResponse);
+          break;
+        case "takeScreenshot":
+          handleTakeScreenshot(sender, sendResponse);
+          break;
+        case "getLastCapture":
+          handleGetLastCapture(sendResponse);
+          break;
+        case "analyzeReceipt":
+          fetch('https://api.anthropic.com/v1/messages', {
+            method: 'POST',
+            headers: {
+              'x-api-key': process.env.ANTHROPIC_API_KEY
+            },
+            body: JSON.stringify(request.data)
+          })
+          .then(response => response.json())
+          .then(data => sendResponse({success: true, data}))
+          .catch(error => sendResponse({success: false, error: error.message}));
+          return true; // Keep channel open for async response
+      }
+    } catch (error) {
+      console.error('Error handling message:', error);
+      sendResponse({ error: error.message });
+    }
+    
+    return true; // Keep message channel open for async responses
+  });
+
+  // Handler functions
+  function handleStartCapture(request, sender, sendResponse) {
     chrome.tabs.get(request.tabId, (tab) => {
       if (tab.url.startsWith('chrome://') || tab.url.startsWith('edge://')) {
-        chrome.runtime.sendMessage({
-          action: 'captureError',
+        sendResponse({
           error: 'Cannot capture from browser system pages'
         });
         return;
@@ -33,98 +75,71 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
         chrome.scripting.executeScript({
           target: { tabId: request.tabId },
           func: injectSelectionUI,
-          args: [chrome.runtime.id] // Pass the extension ID to the content script
+          args: [chrome.runtime.id]
         });
       });
     });
   }
-  
-  if (request.action === "captureRegion") {
-    console.log('Received capture region request with image data length:', 
-      request.imageData ? request.imageData.length : 'no data');
-    
-    try {
-      // Store the captured image data
-      chrome.storage.local.get(['capturedReceipts'], (result) => {
-        const receipts = result.capturedReceipts || [];
-        receipts.unshift({
-          id: Date.now(),
-          timestamp: new Date().toISOString(),
-          image: request.imageData,
-          status: 'Processing'
-        });
-        
-        console.log('Saving receipt...'); // Debug log
-        chrome.storage.local.set({ capturedReceipts: receipts }, async () => {
-          if (chrome.runtime.lastError) {
-            console.error('Storage error:', chrome.runtime.lastError);
-            return;
-          }
-          console.log('Receipt saved successfully');
-          lastCapturedImage = request.imageData;
-          
-          try {
-            await chrome.runtime.sendMessage({
-              action: 'captureSuccess'
-            });
-          } catch (error) {
-            // Popup is closed, that's okay
-            console.log('Popup is closed, capture was still successful');
-          }
-        });
+
+  function handleCaptureRegion(request, sender, sendResponse) {
+    chrome.storage.local.get(['capturedReceipts'], (result) => {
+      const receipts = result.capturedReceipts || [];
+      receipts.unshift({
+        id: Date.now(),
+        timestamp: new Date().toISOString(),
+        image: request.imageData,
+        status: 'Processing'
       });
       
-      sendResponse({ success: true });
-    } catch (error) {
-      console.error('Error processing receipt:', error);
-      sendResponse({ success: false, error: error.message });
-    }
-    return true; // Keep the message channel open for async response
+      chrome.storage.local.set({ capturedReceipts: receipts }, () => {
+        lastCapturedImage = request.imageData;
+        sendResponse({ success: true });
+      });
+    });
   }
-  
-  if (request.action === 'takeScreenshot') {
-    console.log('Taking screenshot...'); // Debug log
+
+  function handleTakeScreenshot(sender, sendResponse) {
     chrome.tabs.captureVisibleTab(null, { 
       format: 'png',
       quality: 100
     }).then(dataUrl => {
-      console.log('Screenshot taken successfully'); // Debug log
       sendResponse({ dataUrl });
     }).catch(error => {
-      console.error('Screenshot error:', error);
       sendResponse({ error: error.message });
     });
-    return true;
   }
 
-  if (request.action === 'getLastCapture') {
+  function handleGetLastCapture(sendResponse) {
     sendResponse({ imageData: lastCapturedImage });
-    lastCapturedImage = null; // Clear after sending
-    return true;
+    lastCapturedImage = null;
   }
+})();
 
-  if (request.action === 'processScreenshot') {
-    // Here you can:
-    // 1. Save the screenshot
-    // 2. Process it for receipt detection
-    // 3. Add it to your receipt list
-    
-    // Example storage in chrome.storage.local
-    chrome.storage.local.get(['receipts'], function(result) {
-      const receipts = result.receipts || [];
-      receipts.push({
-        id: Date.now(),
-        image: request.screenshot,
-        timestamp: new Date().toISOString(),
-        analyzed: false
-      });
-      
-      chrome.storage.local.set({ receipts: receipts }, function() {
-        console.log('Screenshot saved');
-      });
-    });
-  }
+// Near the top of background.js
+const KEEP_ALIVE_INTERVAL = 25; // seconds
+
+// Keep service worker alive during important operations
+function keepAlive() {
+  chrome.runtime.getPlatformInfo(() => {
+    setTimeout(keepAlive, KEEP_ALIVE_INTERVAL * 1000);
+  });
+}
+
+// Make sure the service worker activates immediately
+self.addEventListener('activate', (event) => {
+  event.waitUntil(async function() {
+    // Claim clients
+    await clients.claim();
+    // Start keep-alive
+    keepAlive();
+  }());
 });
+
+// Add near the top
+function logError(error, context = '') {
+  console.error(`Background Error ${context}:`, error);
+  // Optionally report to your error tracking service
+}
 
 // Define the injection function
 function injectSelectionUI(extensionId) {
@@ -447,57 +462,3 @@ function injectSelectionUI(extensionId) {
 
 // Export the injection function for use in chrome.scripting.executeScript
 self.injectSelectionUI = injectSelectionUI; 
-
-chrome.runtime.onMessage.addListener(async (message, sender, sendResponse) => {
-  if (message.action === 'captureArea') {
-    try {
-      // Capture the entire visible tab first
-      const screenshot = await chrome.tabs.captureVisibleTab(null, {
-        format: 'png'
-      });
-
-      // Create a canvas to crop the screenshot
-      const img = new Image();
-      
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d');
-        const dpr = message.area.devicePixelRatio;
-        
-        // Set canvas size to selection size
-        canvas.width = message.area.width * dpr;
-        canvas.height = message.area.height * dpr;
-        
-        // Draw only the selected portion
-        ctx.drawImage(img,
-          message.area.x * dpr, message.area.y * dpr,
-          message.area.width * dpr, message.area.height * dpr,
-          0, 0,
-          message.area.width * dpr, message.area.height * dpr
-        );
-
-        // Get the cropped image
-        const croppedImage = canvas.toDataURL('image/png');
-        
-        // Save to storage
-        chrome.storage.local.get(['receipts'], function(result) {
-          const receipts = result.receipts || [];
-          receipts.push({
-            id: Date.now(),
-            image: croppedImage,
-            timestamp: new Date().toISOString(),
-            analyzed: false
-          });
-          
-          chrome.storage.local.set({ receipts: receipts }, function() {
-            console.log('Cropped screenshot saved');
-          });
-        });
-      };
-
-      img.src = screenshot;
-    } catch (error) {
-      console.error('Screenshot failed:', error);
-    }
-  }
-});

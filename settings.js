@@ -1,122 +1,99 @@
-document.addEventListener('DOMContentLoaded', () => {
-  // Load saved settings when page opens
-  loadSettings();
+document.addEventListener('DOMContentLoaded', async () => {
+  try {
+    const settings = await chrome.storage.sync.get(['expenseEmail', 'serviceType']);
+    
+    if (settings.expenseEmail) {
+      document.getElementById('expenseEmail').value = settings.expenseEmail;
+    }
+    if (settings.serviceType) {
+      document.getElementById('serviceType').value = settings.serviceType;
+    }
+  } catch (error) {
+    showStatus('Error loading settings: ' + error.message, 'error');
+  }
 
-  // Add event listeners
-  document.getElementById('saveSettings').addEventListener('click', saveAllSettings);
-  document.getElementById('addCategory').addEventListener('click', addCategory);
+  // Add service type change handler
+  document.getElementById('serviceType').addEventListener('change', (e) => {
+    const emailInput = document.getElementById('expenseEmail');
+    const currentEmail = emailInput.value;
+    const serviceType = e.target.value;
+
+    // Clear any existing validation messages
+    showStatus('', '');
+
+    // Update placeholder and validation based on service type
+    switch(serviceType) {
+      case 'quickbooks':
+        emailInput.placeholder = 'your-id@qbodocs.com';
+        if (currentEmail && !currentEmail.endsWith('@qbodocs.com')) {
+          showStatus('Quickbooks email must end with @qbodocs.com', 'error');
+        }
+        break;
+      case 'xero':
+        emailInput.placeholder = 'your-id@xerofiles.com';
+        if (currentEmail && !currentEmail.endsWith('@xerofiles.com')) {
+          showStatus('Xero email must end with @xerofiles.com', 'error');
+        }
+        break;
+      default:
+        emailInput.placeholder = 'e.g., expenses@company.com';
+    }
+  });
 });
 
-const DEFAULT_CATEGORIES = [
-  'Meals & Entertainment',
-  'Travel',
-  'Office Supplies',
-  'Software & Subscriptions',
-  'Professional Services',
-  'Utilities',
-  'Marketing',
-  'Equipment',
-  'Training & Education',
-  'Other'
-];
-
-async function loadSettings() {
-  try {
-    const settings = await chrome.storage.sync.get([
-      'expenseEmail',
-      'serviceType',
-      'expenseCategories',
-      'showDebug'
-    ]);
-
-    document.getElementById('expenseEmail').value = settings.expenseEmail || '';
-    document.getElementById('serviceType').value = settings.serviceType || 'quickbooks';
-    document.getElementById('debugToggle').checked = settings.showDebug || false;
-
-    const categories = settings.expenseCategories || DEFAULT_CATEGORIES;
-    renderCategories(categories);
-  } catch (error) {
-    console.error('Error loading settings:', error);
-    showStatus('Error loading settings', 'error');
-  }
-}
-
-async function saveAllSettings() {
-  const settings = {
-    expenseEmail: document.getElementById('expenseEmail').value.trim(),
-    serviceType: document.getElementById('serviceType').value,
-    showDebug: document.getElementById('debugToggle').checked,
-    expenseCategories: Array.from(document.querySelectorAll('.category-input'))
-      .map(input => input.value.trim())
-      .filter(Boolean)
-  };
-
-
-  // Validate email if using custom service type
-  if (settings.serviceType === 'custom' && !settings.expenseEmail) {
-    showStatus('Please provide an email address for custom email destination', 'error');
-    return;
-  }
+document.getElementById('saveBtn').addEventListener('click', async () => {
+  const expenseEmail = document.getElementById('expenseEmail').value.trim();
+  const serviceType = document.getElementById('serviceType').value;
 
   try {
-    await chrome.storage.sync.set(settings);
-    showStatus('Settings saved successfully', 'success');
-    console.log('Settings saved:', {
-      hasAnthropicKey: !!settings.anthropicKey,
-      keyFormat: settings.anthropicKey ? settings.anthropicKey.substring(0, 7) + '...' : 'none',
-      serviceType: settings.serviceType
+    // Validate email format
+    if (!expenseEmail) {
+      throw new Error('Please enter an email address');
+    }
+    if (!isValidEmail(expenseEmail)) {
+      throw new Error('Please enter a valid email address');
+    }
+
+    // Validate service-specific email domains
+    if (serviceType === 'quickbooks' && !expenseEmail.endsWith('@qbodocs.com')) {
+      throw new Error('Quickbooks email must end with @qbodocs.com');
+    }
+    if (serviceType === 'xero' && !expenseEmail.endsWith('@xerofiles.com')) {
+      throw new Error('Xero email must end with @xerofiles.com');
+    }
+
+    // Save to chrome.storage
+    await chrome.storage.sync.set({
+      expenseEmail: expenseEmail,
+      serviceType: serviceType
     });
+
+    showStatus('Settings saved successfully!', 'success');
+
   } catch (error) {
-    showStatus('Error saving settings: ' + error.message, 'error');
+    showStatus(error.message, 'error');
   }
-}
+});
 
-function renderCategories(categories) {
-  const container = document.getElementById('categoriesList');
-  container.innerHTML = categories.map((category, index) => `
-    <div class="category-item">
-      <input type="text" class="category-input" value="${category}">
-      <button class="delete" onclick="deleteCategory(${index})">Delete</button>
-    </div>
-  `).join('');
-}
-
-function addCategory() {
-  const newCategoryInput = document.getElementById('newCategory');
-  const category = newCategoryInput.value.trim();
-  
-  if (!category) return;
-
-  const container = document.getElementById('categoriesList');
-  const newItem = document.createElement('div');
-  newItem.className = 'category-item';
-  newItem.innerHTML = `
-    <input type="text" class="category-input" value="${category}">
-    <button class="delete" onclick="deleteCategory(${container.children.length})">Delete</button>
-  `;
-  
-  container.appendChild(newItem);
-  newCategoryInput.value = '';
-}
-
-function deleteCategory(index) {
-  const container = document.getElementById('categoriesList');
-  container.children[index].remove();
+function isValidEmail(email) {
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  return emailRegex.test(email);
 }
 
 function showStatus(message, type) {
-  const notificationBar = document.getElementById('notificationBar');
-  const notificationText = document.getElementById('notificationText');
+  const status = document.getElementById('status');
+  if (!message) {
+    status.style.display = 'none';
+    return;
+  }
   
-  notificationText.textContent = message;
-  notificationBar.style.background = type === 'error' ? '#fee2e2' : '#dcfce7';
-  notificationBar.style.color = type === 'error' ? '#991b1b' : '#166534';
-  
-  // Show notification
-  notificationBar.classList.add('show');
-  
-  // Hide after 3 seconds
-  setTimeout(() => {
-    notificationBar.classList.remove('show');
-  }, 3000);
+  status.textContent = message;
+  status.className = `status ${type}`;
+  status.style.display = 'block';
+
+  if (type === 'success') {
+    setTimeout(() => {
+      status.style.display = 'none';
+    }, 3000);
+  }
 } 
