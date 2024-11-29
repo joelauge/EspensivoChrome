@@ -96,6 +96,12 @@ exports.analyze = onRequest({
 
     // Check for API key
     const apiKey = process.env.ANTHROPIC_API_KEY;
+    console.log('Environment variables:', {
+      ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ? 'set' : 'not set',
+      NODE_ENV: process.env.NODE_ENV,
+      FUNCTION_TARGET: process.env.FUNCTION_TARGET
+    });
+
     if (!apiKey) {
       console.error('ANTHROPIC_API_KEY environment variable not set');
       throw new Error('Anthropic API key not configured');
@@ -173,49 +179,90 @@ exports.analyze = onRequest({
   }
 });
 
-exports.email = onRequest(async (req, res) => {
+exports.email = onRequest({
+  secrets: [
+    "ELASTIC_EMAIL_USERNAME",
+    "ELASTIC_EMAIL_SMTP_PASSWORD",
+    "ELASTIC_EMAIL_FROM_ADDRESS"
+  ]
+}, async (req, res) => {
+  console.log('email: Starting email function...');
+  
   try {
-    const { to, subject, body, attachment } = req.body;
+    // Enable CORS
+    res.set('Access-Control-Allow-Origin', '*');
+    res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.set('Access-Control-Allow-Headers', 'Content-Type');
 
-    // Prepare the email data for Elastic Email API
-    const emailData = {
-      Recipients: [{ Email: to }],
-      Subject: subject,
-      Body: [{
-        ContentType: "HTML",
-        Content: body
-      }],
-      Attachments: [{
-        BinaryContent: attachment.content,
-        Name: "receipt.png",
-        ContentType: "image/png"
-      }]
-    };
-
-    // Send via Elastic Email API
-    const response = await fetch('https://api.elasticemail.com/v4/emails/transactional', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-ElasticEmail-ApiKey': process.env.ELASTIC_EMAIL_API_KEY || '9832415EEE54D602A0E80C860017668295C2'
-      },
-      body: JSON.stringify(emailData)
-    });
-
-    // Log response for debugging
-    const responseText = await response.text();
-    console.log('Elastic Email API response:', responseText);
-
-    if (!response.ok) {
-      throw new Error(`Elastic Email API error: ${response.statusText} - ${responseText}`);
+    // Handle preflight
+    if (req.method === 'OPTIONS') {
+      res.status(204).send('');
+      return;
     }
 
-    res.json({ success: true });
+    // Check environment variables
+    if (!process.env.ELASTIC_EMAIL_USERNAME || 
+        !process.env.ELASTIC_EMAIL_SMTP_PASSWORD || 
+        !process.env.ELASTIC_EMAIL_FROM_ADDRESS) {
+      throw new Error('Missing email configuration');
+    }
+
+    const { to, subject, body, attachment } = req.body;
+    
+    if (!to || !subject || !body) {
+      throw new Error('Missing required email fields');
+    }
+
+    const transportConfig = {
+      host: 'smtp.elasticemail.com',
+      port: 2525,
+      secure: false,
+      auth: {
+        user: process.env.ELASTIC_EMAIL_USERNAME,
+        pass: process.env.ELASTIC_EMAIL_SMTP_PASSWORD
+      }
+    };
+
+    const transporter = nodemailer.createTransport(transportConfig);
+    await transporter.verify();
+
+    // Create email options
+    const mailOptions = {
+      from: process.env.ELASTIC_EMAIL_FROM_ADDRESS,
+      to,
+      subject,
+      html: body
+    };
+
+    // Add attachment if present
+    if (attachment) {
+      mailOptions.attachments = [{
+        filename: attachment.filename,
+        content: Buffer.from(attachment.content, 'base64'),
+        contentType: attachment.contentType
+      }];
+    }
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log('email: Message sent successfully:', info.messageId);
+    
+    res.json({ 
+      success: true, 
+      messageId: info.messageId 
+    });
+
   } catch (error) {
-    console.error('Email sending failed:', error);
+    console.error('email: Error details:', {
+      name: error.name,
+      message: error.message,
+      code: error.code,
+      stack: error.stack
+    });
+
     res.status(500).json({ 
-      success: false, 
-      error: { message: error.message } 
+      error: 'Failed to send email',
+      details: error.message,
+      code: error.code
     });
   }
 });
