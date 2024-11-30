@@ -129,4 +129,48 @@ function showNotification(message, type = 'success') {
   chrome.runtime.sendMessage({ 
     action: 'captureSuccess'
   });
-} 
+}
+
+chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'initiateCapture') {
+    // Handle capture initiation
+    const captureArea = document.querySelector('.capture-area'); // Or whatever your selector is
+    
+    if (request.hideUI) {
+      // Hide capture UI elements before taking screenshot
+      const uiElements = document.querySelectorAll('.capture-ui, .capture-controls, .capture-overlay');
+      uiElements.forEach(el => {
+        if (el !== captureArea) {
+          el.style.visibility = 'hidden';
+        }
+      });
+    }
+
+    // Make sure capture area is clickable
+    if (captureArea) {
+      captureArea.style.pointerEvents = 'auto';
+      captureArea.style.cursor = 'crosshair';
+    }
+
+    // Set up click handler for capture area
+    captureArea.addEventListener('click', async (e) => {
+      try {
+        // Your capture logic here
+        
+        // After successful capture
+        sendResponse({ success: true });
+        
+        // Restore UI elements after capture
+        const uiElements = document.querySelectorAll('.capture-ui, .capture-controls, .capture-overlay');
+        uiElements.forEach(el => {
+          el.style.visibility = 'visible';
+        });
+      } catch (error) {
+        console.error('Capture error:', error);
+        sendResponse({ error: error.message });
+      }
+    }, { once: true }); // Remove listener after first click
+    
+    return true; // Keep message channel open for async response
+  }
+}); 

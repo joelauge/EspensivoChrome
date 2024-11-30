@@ -1,14 +1,9 @@
 const { onRequest } = require("firebase-functions/v2/https");
-const express = require("express");
-const cors = require("cors");
-const rateLimit = require("express-rate-limit");
-const nodemailer = require('nodemailer');
-const multer = require('multer');
-const Stripe = require('stripe');
-const upload = multer({ storage: multer.memoryStorage() });
 const admin = require('firebase-admin');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 require('dotenv').config();
+const cors = require('cors')({ origin: true });
+const nodemailer = require('nodemailer');
 
 // Initialize Firebase Admin
 try {
@@ -18,23 +13,18 @@ try {
   console.error('Firebase Admin initialization error:', error);
 }
 
-// Initialize the api object
-exports.api = {};
-
-// Add the handler
-exports.analyze = onRequest({
-  environmentVariables: ['ANTHROPIC_API_KEY'],
-  memory: '256MB',
-  timeoutSeconds: 60,
-  cors: true
+// Export the webhook function
+exports.stripeWebhook = onRequest({
+  secrets: ["STRIPE_SECRET_KEY", "STRIPE_WEBHOOK_SECRET"]
 }, async (req, res) => {
-  console.log('Received request:', {
-    path: req.path,
-    method: req.method,
-    headers: req.headers,
-    bodyLength: req.body ? JSON.stringify(req.body).length : 0
-  });
+  const webhook = require('./webhook');
+  return webhook.stripeWebhook(req, res);
+});
 
+// Add new checkout endpoint
+exports.createCheckoutSession = onRequest({
+  secrets: ["STRIPE_SECRET_KEY"]
+}, async (req, res) => {
   // Enable CORS
   res.set('Access-Control-Allow-Origin', '*');
   res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -42,143 +32,132 @@ exports.analyze = onRequest({
 
   // Handle preflight
   if (req.method === 'OPTIONS') {
-    console.log('Handling OPTIONS request');
     res.status(204).send('');
     return;
   }
 
-  // Handle token request
-  if (req.path === '/token' && req.method === 'POST') {
-    try {
-      const { extensionId, timestamp } = req.body;
-      
-      if (!extensionId) {
-        throw new Error('Extension ID is required');
-      }
-      
-      // Generate a temporary token (valid for 5 minutes)
-      const token = Buffer.from(`${extensionId}:${Date.now()}`).toString('base64');
-      
-      res.json({
-        token,
-        anthropicEndpoint: 'https://api.anthropic.com/v1/messages'
-      });
-      return;
-    } catch (error) {
-      console.error('Token generation error:', error);
-      res.status(500).json({
-        success: false,
-        error: error.message
-      });
-      return;
-    }
-  }
-
-  // Only handle POST requests to /analyze
-  if (req.method !== 'POST') {
-    console.log('Invalid path or method:', { path: req.path, method: req.method });
-    res.status(404).json({
-      success: false,
-      error: 'Not found'
-    });
-    return;
-  }
-
+  const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY);
+  
   try {
-    const { image } = req.body;
-    console.log('Request body keys:', Object.keys(req.body));
-    if (!image) {
-      console.log('No image data in request body:', req.body);
-      throw new Error('No image data provided');
-    }
-
-    console.log('Calling Anthropic API with image data length:', image.length);
-
-    // Check for API key
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    console.log('Environment variables:', {
-      ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ? 'set' : 'not set',
-      NODE_ENV: process.env.NODE_ENV,
-      FUNCTION_TARGET: process.env.FUNCTION_TARGET
-    });
-
-    if (!apiKey) {
-      console.error('ANTHROPIC_API_KEY environment variable not set');
-      throw new Error('Anthropic API key not configured');
-    }
-    console.log('API Key available:', !!apiKey);
-
-    console.log('Making Anthropic API request...');
-    const headers = {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': '2023-06-01'
-    };
-    console.log('Request headers:', headers);
-
-    // Call Anthropic API
-    const anthropicResponse = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers,
-      body: JSON.stringify({
-        model: 'claude-3-haiku-20240307',
-        max_tokens: 1024,
-        system: "You are a receipt analysis expert. Extract key information from receipts and format it as JSON.",
-        messages: [{
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              text: 'Please analyze this receipt image and extract the following information in JSON format: total_amount (with currency), date (in YYYY-MM-DD format), vendor_name, and expense_category.'
-            },
-            {
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: 'image/png',
-                data: image
-              }
-            }
-          ]
-        }]
-      })
-    });
-
-    console.log('Anthropic API response status:', anthropicResponse.status);
-    console.log('Anthropic API response headers:', Object.fromEntries(anthropicResponse.headers));
-
-    if (!anthropicResponse.ok) {
-      const errorText = await anthropicResponse.text();
-      console.error('Anthropic API error details:', errorText);
-      throw new Error(`Anthropic API error: ${anthropicResponse.status} - ${errorText}`);
-    }
-
-    const analysisResult = await anthropicResponse.json();
-    console.log('Successfully received Anthropic analysis');
-
-    // Extract the JSON from Anthropic's text response
-    const jsonText = analysisResult.content[0].text;
-    const jsonMatch = jsonText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error('Could not find JSON in Anthropic response');
-    }
+    console.log('Creating checkout session with body:', req.body);
+    const { productType, extensionId } = req.body;
     
-    const extractedData = JSON.parse(jsonMatch[0]);
+    if (!productType || !extensionId) {
+      throw new Error('Missing required fields: productType or extensionId');
+    }
 
-    res.json({
-      success: true,
-      data: extractedData
+    // Set price based on product type
+    let priceId;
+    switch(productType) {
+      case 'capture_pack10':
+        priceId = 'price_1QQZJ52SWDYVKZGEiEFAINf5';
+        break;
+      case 'capture_pack100':
+        priceId = 'price_1QQZNz2SWDYVKZGEZ3ZbBvcq';
+        break;
+      case 'unlimited_sub':
+        priceId = 'price_1QQZOy2SWDYVKZGEDWdis8tx';
+        break;
+      default:
+        throw new Error(`Invalid product type: ${productType}`);
+    }
+
+    console.log('Creating Stripe session with:', {
+      priceId,
+      extensionId,
+      mode: productType === 'unlimited_sub' ? 'subscription' : 'payment'
     });
 
+    // Create Checkout Session with web URLs
+    const session = await stripe.checkout.sessions.create({
+      payment_method_types: ['card'],
+      line_items: [{
+        price: priceId,
+        quantity: 1,
+      }],
+      mode: productType === 'unlimited_sub' ? 'subscription' : 'payment',
+      success_url: `https://espensivo.com/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `https://espensivo.com/cancel`,
+      metadata: {
+        extensionId: extensionId
+      }
+    });
+
+    console.log('Session created successfully:', session.id);
+    res.json({ 
+      sessionId: session.id,
+      checkoutUrl: session.url // Stripe provides a hosted checkout URL
+    });
   } catch (error) {
-    console.error('Analysis error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
+    console.error('Checkout session creation failed:', {
+      error: error.message,
+      stack: error.stack,
+      body: req.body
+    });
+    res.status(500).json({ 
+      error: error.message,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
 
+// Add new endpoint to check user status
+exports.checkUserStatus = onRequest({
+  secrets: ["STRIPE_SECRET_KEY"]
+}, async (req, res) => {
+  console.log('CheckUserStatus called with body:', req.body);
+  
+  // Enable CORS
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type');
+
+  // Handle preflight
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+
+  try {
+    const { extensionId } = req.body;
+    
+    if (!extensionId) {
+      console.error('Missing extensionId in request');
+      throw new Error('Missing extensionId');
+    }
+
+    console.log('Checking Firestore for user:', extensionId);
+    
+    // Get user data from Firestore
+    const userDoc = await admin.firestore()
+      .collection('users')
+      .doc(extensionId)
+      .get();
+
+    if (!userDoc.exists) {
+      console.log('No user document found for:', extensionId);
+      return res.json({ credits: 0 });
+    }
+
+    const userData = userDoc.data();
+    console.log('Found user data:', userData);
+    
+    // Return credits and subscription status
+    const response = {
+      credits: userData.trialCaptures || 0,
+      subscription: userData.hasUnlimitedSubscription || null
+    };
+    
+    console.log('Sending response:', response);
+    res.json(response);
+
+  } catch (error) {
+    console.error('Error checking user status:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Add new email endpoint
 exports.email = onRequest({
   secrets: [
     "ELASTIC_EMAIL_USERNAME",
@@ -186,56 +165,61 @@ exports.email = onRequest({
     "ELASTIC_EMAIL_FROM_ADDRESS"
   ]
 }, async (req, res) => {
-  console.log('email: Starting email function...');
-  
-  try {
-    // Enable CORS
-    res.set('Access-Control-Allow-Origin', '*');
-    res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.set('Access-Control-Allow-Headers', 'Content-Type');
+  // Enable CORS
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Accept');
 
-    // Handle preflight
+  // Create logger
+  const logger = {
+    level: 'debug', // Set to debug for maximum logging
+    debug: (...args) => console.log('[NODEMAILER DEBUG]', ...args),
+    info: (...args) => console.log('[NODEMAILER INFO]', ...args),
+    warn: (...args) => console.warn('[NODEMAILER WARN]', ...args),
+    error: (...args) => console.error('[NODEMAILER ERROR]', ...args)
+  };
+
+  try {
     if (req.method === 'OPTIONS') {
       res.status(204).send('');
       return;
     }
 
-    // Check environment variables
-    if (!process.env.ELASTIC_EMAIL_USERNAME || 
-        !process.env.ELASTIC_EMAIL_SMTP_PASSWORD || 
-        !process.env.ELASTIC_EMAIL_FROM_ADDRESS) {
-      throw new Error('Missing email configuration');
-    }
-
     const { to, subject, body, attachment } = req.body;
     
-    if (!to || !subject || !body) {
-      throw new Error('Missing required email fields');
-    }
-
-    const transportConfig = {
-      host: 'smtp.elasticemail.com',
-      port: 2525,
-      secure: false,
+    // Create Nodemailer transporter with debug logging
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.elasticemail.com',  // ElasticMail SMTP server
+      port: 2525,                     // ElasticMail port
+      secure: false,                  // ElasticMail uses TLS
       auth: {
         user: process.env.ELASTIC_EMAIL_USERNAME,
         pass: process.env.ELASTIC_EMAIL_SMTP_PASSWORD
-      }
-    };
+      },
+      debug: true,
+      logger: logger
+    });
 
-    const transporter = nodemailer.createTransport(transportConfig);
-    await transporter.verify();
+    // Log transport creation
+    logger.info('Transporter created');
 
-    // Create email options
+    // Build email
     const mailOptions = {
-      from: process.env.ELASTIC_EMAIL_FROM_ADDRESS,
-      to,
-      subject,
-      html: body
+      from: process.env.ELASTIC_EMAIL_FROM_ADDRESS,  // Use configured from address
+      to: to,
+      subject: subject,
+      text: body,
+      html: body.replace(/\n/g, '<br>')
     };
 
     // Add attachment if present
     if (attachment) {
+      logger.debug('Adding attachment:', {
+        filename: attachment.filename,
+        contentLength: attachment.content.length,
+        contentType: attachment.contentType
+      });
+
       mailOptions.attachments = [{
         filename: attachment.filename,
         content: Buffer.from(attachment.content, 'base64'),
@@ -243,26 +227,42 @@ exports.email = onRequest({
       }];
     }
 
-    const info = await transporter.sendMail(mailOptions);
-    console.log('email: Message sent successfully:', info.messageId);
-    
-    res.json({ 
-      success: true, 
-      messageId: info.messageId 
+    // Log email attempt
+    logger.info('Attempting to send email:', {
+      to: to,
+      subject: subject,
+      hasAttachment: !!attachment
     });
+
+    // Send mail with detailed error handling
+    try {
+      const info = await transporter.sendMail(mailOptions);
+      logger.info('Email sent successfully:', info);
+      res.json({ 
+        success: true,
+        messageId: info.messageId,
+        response: info.response
+      });
+    } catch (sendError) {
+      logger.error('Send error:', {
+        error: sendError.message,
+        code: sendError.code,
+        command: sendError.command,
+        response: sendError.response
+      });
+      throw sendError;
+    }
 
   } catch (error) {
-    console.error('email: Error details:', {
-      name: error.name,
-      message: error.message,
-      code: error.code,
-      stack: error.stack
-    });
-
+    logger.error('Function error:', error);
     res.status(500).json({ 
-      error: 'Failed to send email',
-      details: error.message,
-      code: error.code
+      error: error.message,
+      code: error.code,
+      command: error.command,
+      response: error.response,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
+
+// ... rest of your functions ...
