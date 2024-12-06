@@ -12,6 +12,10 @@ const DEFAULT_CATEGORIES = [
 ];
 
 const TRIAL_LIMIT = 5;
+const TRIAL_CAPTURES = 5;
+const CAPTURE_PACK_PRICE = 1000; // $10.00 in cents
+const SUBSCRIPTION_PRICE = 495;   // $4.95 in cents
+const STRIPE_PUBLIC_KEY = 'your_stripe_public_key';
 
 // Helper function to get current tab
 async function getCurrentTab() {
@@ -24,7 +28,14 @@ async function loadReceipts() {
   try {
     const receiptsList = document.getElementById('receiptsList');
     const storage = await chrome.storage.local.get(['capturedReceipts']);
+    const settings = await chrome.storage.sync.get(['customCategories']);
     const receipts = storage.capturedReceipts || [];
+    
+    // Combine default and custom categories
+    const allCategories = [...DEFAULT_CATEGORIES];
+    if (settings.customCategories) {
+      allCategories.push(...settings.customCategories);
+    }
     
     if (receipts.length === 0) {
       receiptsList.innerHTML = '<div class="no-receipts">No receipts captured yet</div>';
@@ -71,7 +82,7 @@ async function loadReceipts() {
             <div class="analysis-row category-selector">
               <span class="analysis-label">Category:</span>
               <select class="category-select" data-index="${index}">
-                ${DEFAULT_CATEGORIES.map(cat => `
+                ${allCategories.map(cat => `
                   <option value="${cat}" ${receipt.analysis.category === cat ? 'selected' : ''}>
                     ${cat}
                   </option>
@@ -137,16 +148,52 @@ async function loadReceipts() {
 
 // Function to handle receipt deletion
 async function deleteReceipt(index) {
-  if (!confirm('Are you sure you want to delete this receipt?')) return;
-
-  try {
-    const storage = await chrome.storage.local.get(['capturedReceipts']);
-    const receipts = storage.capturedReceipts || [];
-    receipts.splice(index, 1);
-    await chrome.storage.local.set({ capturedReceipts: receipts });
-    loadReceipts();
-  } catch (error) {
-    console.error('Failed to delete receipt:', error);
+  const storage = await chrome.storage.local.get(['capturedReceipts']);
+  const receipt = storage.capturedReceipts[index];
+  
+  if (receipt.filed) {
+    // Handle archiving
+    try {
+      // Get existing archived receipts
+      const archiveStorage = await chrome.storage.local.get(['archivedReceipts']);
+      const archivedReceipts = archiveStorage.archivedReceipts || [];
+      
+      // Get the currently selected category before archiving
+      const selectedCategory = document.querySelector(`.category-select[data-index="${index}"]`).value;
+      // Update the receipt's category to the user-selected one
+      receipt.analysis.category = selectedCategory;
+      
+      // Add archive date and move to archived receipts
+      receipt.archivedDate = new Date().toISOString();
+      archivedReceipts.push(receipt);
+      
+      // Remove from active receipts
+      const receipts = storage.capturedReceipts;
+      receipts.splice(index, 1);
+      
+      // Save both changes
+      await chrome.storage.local.set({ 
+        capturedReceipts: receipts,
+        archivedReceipts: archivedReceipts
+      });
+      
+      loadReceipts();
+    } catch (error) {
+      console.error('Failed to archive receipt:', error);
+      alert('Failed to archive receipt. Please try again.');
+    }
+  } else {
+    // Handle deletion
+    if (!confirm('Are you sure you want to delete this receipt?')) return;
+    
+    try {
+      const receipts = storage.capturedReceipts;
+      receipts.splice(index, 1);
+      await chrome.storage.local.set({ capturedReceipts: receipts });
+      loadReceipts();
+    } catch (error) {
+      console.error('Failed to delete receipt:', error);
+    }
   }
 }
 
@@ -161,8 +208,8 @@ function viewReceipt(imageUrl) {
 // Add this function for receipt analysis
 async function analyzeReceipt(index) {
   try {
-    // Get the receipt data
     const storage = await chrome.storage.local.get(['capturedReceipts']);
+    const settings = await chrome.storage.sync.get(['customCategories']);
     const receipt = storage.capturedReceipts[index];
     
     if (!receipt) {
@@ -171,7 +218,6 @@ async function analyzeReceipt(index) {
 
     logDebug('Starting receipt analysis...');
     
-    // Single request to Cloud Function
     const response = await fetch('https://us-central1-espensivo.cloudfunctions.net/analyze/analyze', {
       method: 'POST',
       headers: {
@@ -180,7 +226,8 @@ async function analyzeReceipt(index) {
       body: JSON.stringify({
         image: receipt.image.split(',')[1],
         extensionId: chrome.runtime.id,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        customCategories: settings.customCategories || []
       })
     });
 
@@ -210,6 +257,21 @@ async function analyzeReceipt(index) {
     
     // Reload the receipts display
     await loadReceipts();
+
+    // Update the category dropdown to include custom categories
+    const categorySelect = document.querySelector(`.category-select[data-index="${index}"]`);
+    if (categorySelect) {
+      const allCategories = [...DEFAULT_CATEGORIES];
+      if (settings.customCategories) {
+        allCategories.push(...settings.customCategories);
+      }
+      
+      categorySelect.innerHTML = allCategories.map(cat => `
+        <option value="${cat}" ${receipt.analysis.category === cat ? 'selected' : ''}>
+          ${cat}
+        </option>
+      `).join('');
+    }
 
   } catch (error) {
     console.error('Analysis failed:', error);
@@ -269,7 +331,6 @@ function logDebug(message, type = 'info') {
 // Update the fileReceipt function to use selected category
 async function fileReceipt(index) {
   const fileBtn = document.querySelector(`.file-btn[data-index="${index}"]`);
-  const deleteBtn = document.querySelector(`.delete-btn[data-index="${index}"]`);
   
   try {
     // Get settings and receipt data
@@ -300,8 +361,9 @@ async function fileReceipt(index) {
         <p>Payment Method: ${receipt.analysis.payment_method}</p>
       `,
       attachment: {
-        content: receipt.image.split(',')[1], // Get base64 data without prefix
-        filename: `receipt-${Date.now()}.png`
+        filename: `receipt-${Date.now()}.png`,
+        content: receipt.image.split(',')[1],
+        contentType: 'image/png'
       }
     };
 
@@ -315,8 +377,14 @@ async function fileReceipt(index) {
     });
 
     if (!response.ok) {
-      throw new Error('Failed to send email');
+      const errorData = await response.json();
+      throw new Error(errorData.details || 'Failed to send email');
     }
+
+    // Update receipt status in storage
+    receipt.filed = true;
+    storage.capturedReceipts[index] = receipt;
+    await chrome.storage.local.set({ capturedReceipts: storage.capturedReceipts });
 
     // Update UI to show success
     fileBtn.innerHTML = `
@@ -325,36 +393,52 @@ async function fileReceipt(index) {
       </svg>
       Receipt Filed
     `;
-    // ... rest of your success handling code ...
+    fileBtn.disabled = true;
+    fileBtn.style.backgroundColor = '#059669';
+    fileBtn.style.cursor = 'default';
+    fileBtn.style.opacity = '0.9';
+
+    // Convert delete button to archive button
+    const deleteBtn = document.querySelector(`.delete-btn[data-index="${index}"]`);
+    if (deleteBtn) {
+      deleteBtn.className = 'archive-btn';
+      deleteBtn.textContent = 'Archive';
+    }
 
   } catch (error) {
-    // ... your existing error handling code ...
+    console.error('Filing error:', error);
+    fileBtn.disabled = false;
+    fileBtn.innerHTML = `
+      <svg class="file-icon" viewBox="0 0 20 20">
+        <path d="M10 12V4M10 12l-3-3M10 12l3-3M3 15v2a2 2 0 002 2h10a2 2 0 002-2v-2" stroke="currentColor" fill="none" stroke-width="2"/>
+      </svg>
+      File Receipt
+    `;
+    alert(`Failed to file receipt: ${error.message}`);
   }
 }
 
 // Add these functions to handle purchases
 async function handlePurchaseCredits() {
   try {
-    const response = await fetch('https://api-gifcbjbv2q-uc.a.run.app/create-checkout', {
+    const response = await fetch('https://us-central1-espensivo.cloudfunctions.net/create-checkout', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        productType: 'capture_pack',
+        priceId: 'price_captures_10',
+        quantity: 1,
+        mode: 'payment',
+        amount: CAPTURE_PACK_PRICE,
+        currency: 'usd',
         extensionId: chrome.runtime.id
       })
     });
 
     const { sessionId } = await response.json();
-    
-    // Redirect to Stripe Checkout
-    const stripe = Stripe('your_stripe_public_key'); // Replace with your public key
-    const { error } = await stripe.redirectToCheckout({ sessionId });
-    
-    if (error) {
-      throw new Error(error.message);
-    }
+    const stripe = Stripe(STRIPE_PUBLIC_KEY);
+    await stripe.redirectToCheckout({ sessionId });
   } catch (error) {
     console.error('Purchase error:', error);
     alert('Failed to start purchase process. Please try again.');
@@ -363,26 +447,23 @@ async function handlePurchaseCredits() {
 
 async function handleSubscribe() {
   try {
-    const response = await fetch('https://api-gifcbjbv2q-uc.a.run.app/create-checkout', {
+    const response = await fetch('https://us-central1-espensivo.cloudfunctions.net/create-checkout', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        productType: 'unlimited_sub',
+        priceId: 'price_subscription_monthly',
+        mode: 'subscription',
+        amount: SUBSCRIPTION_PRICE,
+        currency: 'usd',
         extensionId: chrome.runtime.id
       })
     });
 
     const { sessionId } = await response.json();
-    
-    // Redirect to Stripe Checkout
-    const stripe = Stripe('your_stripe_public_key'); // Replace with your public key
-    const { error } = await stripe.redirectToCheckout({ sessionId });
-    
-    if (error) {
-      throw new Error(error.message);
-    }
+    const stripe = Stripe(STRIPE_PUBLIC_KEY);
+    await stripe.redirectToCheckout({ sessionId });
   } catch (error) {
     console.error('Subscription error:', error);
     alert('Failed to start subscription process. Please try again.');
@@ -391,6 +472,15 @@ async function handleSubscribe() {
 
 // Main event listener
 document.addEventListener('DOMContentLoaded', async () => {
+  // Initialize trial captures if not set
+  const status = await chrome.storage.sync.get(['trialCaptures']);
+  if (typeof status.trialCaptures === 'undefined') {
+    await chrome.storage.sync.set({ trialCaptures: TRIAL_CAPTURES });
+  }
+
+  // Update trial UI
+  updateTrialUI();
+
   // Attach event listeners
   document.getElementById('captureBtn').addEventListener('click', async () => {
     try {
@@ -458,7 +548,52 @@ document.addEventListener('DOMContentLoaded', async () => {
     chrome.runtime.openOptionsPage();
   });
 
-  // Add event listeners for upgrade buttons
+  // Add purchase button handlers
   document.getElementById('buyCreditsBtn').addEventListener('click', handlePurchaseCredits);
   document.getElementById('subscribeBtn').addEventListener('click', handleSubscribe);
 });
+
+// Update the captureSelection function to check trial status
+async function captureSelection() {
+  try {
+    // Check trial/subscription status
+    const status = await chrome.storage.sync.get(['trialCaptures', 'subscription']);
+    
+    if (!status.subscription?.active && (!status.trialCaptures || status.trialCaptures <= 0)) {
+      alert('You have no captures remaining. Please purchase more captures or subscribe.');
+      return;
+    }
+
+    // ... existing capture code ...
+
+    // If successful capture, decrement trial captures if not subscribed
+    if (!status.subscription?.active && status.trialCaptures > 0) {
+      await chrome.storage.sync.set({ 
+        trialCaptures: status.trialCaptures - 1 
+      });
+      updateTrialUI();
+    }
+  } catch (error) {
+    console.error('Capture failed:', error);
+  }
+}
+
+// Function to update trial UI
+async function updateTrialUI() {
+  const status = await chrome.storage.sync.get(['trialCaptures', 'subscription']);
+  const trialSection = document.getElementById('trialSection');
+  const capturesLeft = document.getElementById('capturesLeft');
+  
+  if (status.subscription?.active) {
+    trialSection.style.display = 'none';
+  } else {
+    trialSection.style.display = 'block';
+    capturesLeft.textContent = status.trialCaptures || 0;
+    
+    // Disable capture button if no captures left
+    const captureBtn = document.getElementById('captureBtn');
+    if (captureBtn) {
+      captureBtn.disabled = status.trialCaptures <= 0;
+    }
+  }
+}

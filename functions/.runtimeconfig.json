@@ -1,0 +1,6 @@
+{
+  "stripe": {
+    "secret_key": "sk_test_51QPa562SWDYVKZGEAcjXJBrgwXXBnkVWvdvEYcr1wTrvakcPJ1OO5zvnYJcp5frm9m7E88JKblAZsvJxirjf6a0100Jpn2zbd9",
+    "webhook_secret": "whsec_OU4cXZ9qn8AJLigzlAAVZk108Qocbra1"
+  }
+}

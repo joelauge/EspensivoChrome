@@ -562,6 +562,62 @@
       cursor: pointer;
       font-size: 13px;
     }
+
+    .trial-section {
+      padding: 16px;
+      border-bottom: 1px solid #e5e7eb;
+      margin-bottom: 16px;
+    }
+
+    .trial-counter {
+      text-align: center;
+      font-size: 14px;
+      color: #4b5563;
+      margin-bottom: 12px;
+    }
+
+    #capturesLeft {
+      font-weight: 600;
+      color: #2563eb;
+    }
+
+    .purchase-options {
+      display: flex;
+      gap: 8px;
+    }
+
+    .purchase-btn {
+      flex: 1;
+      padding: 8px 12px;
+      border: 1px solid #2563eb;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      background: white;
+      color: #2563eb;
+      transition: all 0.2s;
+    }
+
+    .purchase-btn:hover {
+      background: #f8fafc;
+    }
+
+    .purchase-btn.subscribe {
+      background: #2563eb;
+      color: white;
+    }
+
+    .purchase-btn.subscribe:hover {
+      background: #1d4ed8;
+    }
+
+    .price {
+      font-weight: 600;
+    }
   </style>
 </head>
 <body>
@@ -580,16 +636,18 @@
       </a>
     </div>
     <div class="subtitle">receipts to expenses in seconds</div>
-    <div class="trial-status">
+    <div class="trial-section" id="trialSection">
       <div class="trial-counter">
-        <span id="remainingCaptures">5</span> free captures remaining
+        <span id="capturesLeft">5</span> Free Captures Left
       </div>
-      <div class="upgrade-options" style="display: none;">
-        <button id="buyCreditsBtn" class="secondary-btn">
-          Buy 10 Captures ($10.00)
+      <div class="purchase-options">
+        <button id="buyCreditsBtn" class="purchase-btn">
+          Buy 10 Captures
+          <span class="price">$10.00</span>
         </button>
-        <button id="subscribeBtn" class="primary-btn">
-          Unlimited Monthly ($4.99)
+        <button id="subscribeBtn" class="purchase-btn subscribe">
+          Get Unlimited Captures
+          <span class="price">$4.95/mo</span>
         </button>
       </div>
     </div>

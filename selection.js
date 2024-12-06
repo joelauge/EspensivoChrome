@@ -98,19 +98,19 @@
       // Store the dimensions before hiding elements
       const rect = selectionDiv.getBoundingClientRect();
       const dimensions = {
-        left: rect.left,
-        top: rect.top,
+        left: rect.left + window.scrollX,
+        top: rect.top + window.scrollY,
         width: rect.width,
         height: rect.height
       };
 
-      // Temporarily hide ALL UI elements
+      // Hide ALL UI elements before capture
       selectionDiv.style.display = 'none';
       captureBtn.style.display = 'none';
-      overlay.style.background = 'transparent';
-      
-      // Give the browser a moment to repaint without the UI elements
-      await new Promise(resolve => setTimeout(resolve, 100));
+      overlay.style.display = 'none';
+
+      // Wait for a frame to ensure UI is hidden
+      await new Promise(resolve => requestAnimationFrame(resolve));
 
       // Take screenshot
       const response = await chrome.runtime.sendMessage({
@@ -132,41 +132,46 @@
         img.src = response.dataUrl;
       });
 
+      // Set canvas dimensions to match selection
       canvas.width = dimensions.width;
       canvas.height = dimensions.height;
 
+      // Draw cropped image
       ctx.drawImage(
         img,
-        dimensions.left * window.devicePixelRatio,
-        dimensions.top * window.devicePixelRatio,
-        dimensions.width * window.devicePixelRatio,
-        dimensions.height * window.devicePixelRatio,
+        dimensions.left,
+        dimensions.top,
+        dimensions.width,
+        dimensions.height,
         0,
         0,
         dimensions.width,
         dimensions.height
       );
 
-      const imageData = canvas.toDataURL('image/png');
+      // Get cropped image data
+      const croppedDataUrl = canvas.toDataURL('image/png');
 
-      // Send to background script
+      // Send cropped image to background
       await chrome.runtime.sendMessage({
         action: 'captureRegion',
-        imageData: imageData
+        imageData: croppedDataUrl
       });
 
       // Clean up
-      cleanup();
-    } catch (error) {
-      console.error('Capture error:', error);
-      cleanup();
-    }
-  }
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      document.body.removeChild(overlay);
+      document.body.removeChild(selectionDiv);
+      document.body.removeChild(captureBtn);
 
-  function cleanup() {
-    document.body.removeChild(overlay);
-    document.body.removeChild(selectionDiv);
-    document.body.removeChild(captureBtn);
+    } catch (error) {
+      console.error('Capture failed:', error);
+      // Restore UI if there's an error
+      if (selectionDiv) selectionDiv.style.display = 'block';
+      if (captureBtn) captureBtn.style.display = 'block';
+      if (overlay) overlay.style.display = 'block';
+    }
   }
 
   createOverlay();

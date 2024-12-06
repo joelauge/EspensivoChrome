@@ -33,6 +33,7 @@
     "resources": [
       "selection.js",
       "settings.html",
+      "archived.html",
       "images/*",
       "lib/*"
     ],

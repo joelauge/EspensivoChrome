@@ -123,13 +123,17 @@ exports.analyze = onRequest({
       body: JSON.stringify({
         model: 'claude-3-haiku-20240307',
         max_tokens: 1024,
-        system: "You are a receipt analysis expert. Extract key information from receipts and format it as JSON.",
+        system: `You are a receipt analysis expert. Extract key information from receipts and format it as JSON. 
+        For expense_category, categorize into one of these default categories: ${DEFAULT_CATEGORIES.join(', ')}. 
+        If custom categories are provided, also consider those for better categorization.`,
         messages: [{
           role: 'user',
           content: [
             {
               type: 'text',
-              text: 'Please analyze this receipt image and extract the following information in JSON format: total_amount (with currency), date (in YYYY-MM-DD format), vendor_name, and expense_category.'
+              text: `Please analyze this receipt image and extract the following information in JSON format: 
+              total_amount (with currency), date (in YYYY-MM-DD format), vendor_name, and expense_category. 
+              ${req.body.customCategories ? `Also consider these custom categories: ${req.body.customCategories.join(', ')}` : ''}`
             },
             {
               type: 'image',
