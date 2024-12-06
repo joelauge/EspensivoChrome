@@ -2,44 +2,18 @@
 <html>
 <head>
   <title>Payment Successful - Espensivo</title>
-  <script>
-    window.onload = function() {
-      const params = new URLSearchParams(window.location.search);
-      const sessionId = params.get('session_id');
-
-      // Try to open the extension popup
-      chrome.runtime.sendMessage('kaijibinmccffbklpdpfchdmopjmlden', { 
-        action: 'openPopup',
-        sessionId: sessionId
-      }, function(response) {
-        // After sending message, close this tab
-        window.close();
-      });
-    };
-  </script>
   <style>
-    body {
-      font-family: -apple-system, system-ui, sans-serif;
-      display: flex;
-      justify-content: center;
-      align-items: center;
-      height: 100vh;
-      margin: 0;
-      background: #f9fafb;
-    }
-    .message {
-      text-align: center;
-      padding: 2rem;
-      background: white;
-      border-radius: 8px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    }
+    /* Copy styles from popup.html */
   </style>
 </head>
 <body>
-  <div class="message">
-    <h1>✨ Success!</h1>
-    <p>Payment successful! Opening Espensivo...</p>
+  <div class="container">
+    <div class="success-message">
+      <h1>🎉 Payment Successful!</h1>
+      <p>Your account has been upgraded. You can now continue using Espensivo.</p>
+      <button id="returnBtn">Return to Espensivo</button>
+    </div>
   </div>
+  <script src="success.js"></script>
 </body>
 </html> 

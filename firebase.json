@@ -14,16 +14,31 @@
       }
     ]
   },
-  "functions": [{
+  "functions": {
     "source": "functions",
-    "codebase": "default",
     "runtime": "nodejs20",
-    "region": ["us-central1"],
+    "region": "us-central1",
+    "environmentVariables": {
+      "ANTHROPIC_API_KEY": "${ANTHROPIC_API_KEY}"
+    },
+    "codebase": "default",
+    "gen": 1,
+    "minInstances": 0,
+    "maxInstances": 10,
+    "docker": {
+      "healthCheck": {
+        "path": "/health",
+        "interval": "30s",
+        "timeout": "10s",
+        "retries": 3
+      }
+    },
     "secrets": [
-      "STRIPE_SECRET_KEY",
-      "STRIPE_WEBHOOK_SECRET"
+      "ELASTIC_EMAIL_USERNAME",
+      "ELASTIC_EMAIL_SMTP_PASSWORD",
+      "ELASTIC_EMAIL_FROM_ADDRESS"
     ]
-  }],
+  },
   "firestore": {
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"

@@ -98,75 +98,6 @@
       font-size: 12px;
       color: #6b7280;
     }
-
-    .categories-section {
-      display: flex;
-      gap: 24px;
-      margin-top: 16px;
-    }
-
-    .default-categories, .custom-categories {
-      flex: 1;
-    }
-
-    .category-list {
-      margin-top: 8px;
-      display: flex;
-      flex-direction: column;
-      gap: 8px;
-    }
-
-    .category-item {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px;
-      background: #f9fafb;
-      border-radius: 4px;
-    }
-
-    .category-item.default {
-      color: #6b7280;
-    }
-
-    .category-item input {
-      flex: 1;
-      border: 1px solid transparent;
-      background: transparent;
-      padding: 4px;
-      border-radius: 4px;
-    }
-
-    .category-item input:focus {
-      border-color: #2563eb;
-      background: white;
-      outline: none;
-    }
-
-    .delete-category {
-      color: #dc2626;
-      cursor: pointer;
-      padding: 4px 8px;
-      border: none;
-      background: none;
-      font-size: 14px;
-      border-radius: 4px;
-      transition: all 0.2s ease;
-    }
-
-    .delete-category:hover {
-      background: #fee2e2;
-    }
-
-    .add-category {
-      margin-top: 16px;
-      display: flex;
-      gap: 8px;
-    }
-
-    .add-category input {
-      flex: 1;
-    }
   </style>
 </head>
 <body>
@@ -196,31 +127,6 @@
       <option value="xero">Xero</option>
     </select>
     <div class="help-text">Select your expense management service</div>
-  </div>
-
-  <div class="form-group">
-    <h3>Receipt Categories</h3>
-    
-    <div class="categories-section">
-      <div class="default-categories">
-        <h4>Default Categories</h4>
-        <div class="category-list">
-          <!-- Default categories will be populated here -->
-        </div>
-      </div>
-      
-      <div class="custom-categories">
-        <h4>Custom Categories</h4>
-        <div class="category-list" id="customCategories">
-          <!-- Custom categories will be populated here -->
-        </div>
-        
-        <div class="add-category">
-          <input type="text" id="newCategory" placeholder="New category name">
-          <button id="addCategoryBtn" class="secondary-btn">Add Category</button>
-        </div>
-      </div>
-    </div>
   </div>
 
   <button id="saveBtn">Save Settings</button>
