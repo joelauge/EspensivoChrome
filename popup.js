@@ -17,6 +17,97 @@ const CAPTURE_PACK_PRICE = 1000; // $10.00 in cents
 const SUBSCRIPTION_PRICE = 495;   // $4.95 in cents
 const STRIPE_PUBLIC_KEY = 'your_stripe_public_key';
 
+// Add this function near the top of popup.js
+function showCustomAlert(message) {
+  // Create modal container
+  const alertModal = document.createElement('div');
+  alertModal.style.cssText = `
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10000;
+  `;
+
+  // Create modal content
+  const modalContent = document.createElement('div');
+  modalContent.style.cssText = `
+    background: white;
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 320px;
+    width: 90%;
+    text-align: center;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  `;
+
+  // Add logo
+  const logo = document.createElement('img');
+  logo.src = 'images/icon48.png';
+  logo.alt = 'Espensivo Logo';
+  logo.style.cssText = `
+    width: 48px;
+    height: 48px;
+    margin-bottom: 16px;
+  `;
+
+  // Add title
+  const title = document.createElement('h2');
+  title.textContent = 'Espensivo Alert';
+  title.style.cssText = `
+    font-size: 16px;
+    font-weight: 600;
+    color: #1f2937;
+    margin: 0 0 12px 0;
+  `;
+
+  // Add message
+  const messageText = document.createElement('p');
+  messageText.textContent = message;
+  messageText.style.cssText = `
+    margin: 0 0 20px 0;
+    color: #4b5563;
+    font-size: 14px;
+    line-height: 1.5;
+  `;
+
+  // Add OK button
+  const okButton = document.createElement('button');
+  okButton.textContent = 'OK';
+  okButton.style.cssText = `
+    background: #2563eb;
+    color: white;
+    border: none;
+    padding: 8px 32px;
+    border-radius: 6px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.2s;
+  `;
+  okButton.addEventListener('mouseover', () => {
+    okButton.style.background = '#1d4ed8';
+  });
+  okButton.addEventListener('mouseout', () => {
+    okButton.style.background = '#2563eb';
+  });
+  okButton.addEventListener('click', () => {
+    document.body.removeChild(alertModal);
+  });
+
+  // Assemble modal
+  modalContent.appendChild(logo);
+  modalContent.appendChild(title);
+  modalContent.appendChild(messageText);
+  modalContent.appendChild(okButton);
+  alertModal.appendChild(modalContent);
+  document.body.appendChild(alertModal);
+}
+
 // Helper function to get current tab
 async function getCurrentTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -31,6 +122,11 @@ async function loadReceipts() {
     const settings = await chrome.storage.sync.get(['customCategories']);
     const receipts = storage.capturedReceipts || [];
     
+    // Get the timestamp of the most recent receipt
+    const latestReceipt = receipts[0];
+    const isNewReceipt = latestReceipt && 
+      (Date.now() - new Date(latestReceipt.timestamp).getTime() < 5000);
+    
     // Combine default and custom categories
     const allCategories = [...DEFAULT_CATEGORIES];
     if (settings.customCategories) {
@@ -43,7 +139,8 @@ async function loadReceipts() {
     }
 
     receiptsList.innerHTML = receipts.map((receipt, index) => `
-      <div class="receipt-item">
+      <div class="receipt-item${isNewReceipt && index === 0 ? ' new-receipt' : ''}">
+        ${isNewReceipt && index === 0 ? '<div class="new-tag">New</div>' : ''}
         <div class="receipt-row">
           <div class="image-preview" data-image="${receipt.image}">
             <img src="${receipt.image}" alt="Receipt ${index + 1}">
@@ -106,6 +203,14 @@ async function loadReceipts() {
       </div>
     `).join('');
 
+    // If this is a new receipt, scroll it into view
+    if (isNewReceipt) {
+      const newReceipt = receiptsList.querySelector('.new-receipt');
+      if (newReceipt) {
+        newReceipt.scrollIntoView({ behavior: 'smooth' });
+      }
+    }
+
     // Add event listeners after creating elements
     document.querySelectorAll('.analyze-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -120,7 +225,7 @@ async function loadReceipts() {
         const index = parseInt(btn.dataset.index);
         const isArchive = btn.classList.contains('archive-btn');
         const message = isArchive ? 'Are you sure you want to archive this receipt?' : 'Are you sure you want to delete this receipt?';
-        if (confirm(message)) {
+        if (window.confirm(message)) {
           deleteReceipt(index);
         }
       });
@@ -207,7 +312,26 @@ function viewReceipt(imageUrl) {
 
 // Add this function for receipt analysis
 async function analyzeReceipt(index) {
+  const analyzeBtn = document.querySelector(`.analyze-btn[data-index="${index}"]`);
   try {
+    // Check and decrement captures
+    const status = await chrome.storage.sync.get(['trialCaptures', 'subscription']);
+    if (!status.subscription?.active) {
+      if (!status.trialCaptures || status.trialCaptures <= 0) {
+        showCustomAlert('You have no captures remaining. Please purchase more captures or subscribe.');
+        return;
+      }
+      // Decrement captures
+      await chrome.storage.sync.set({ 
+        trialCaptures: status.trialCaptures - 1 
+      });
+      updateTrialUI();
+    }
+    
+    // Show loading state
+    analyzeBtn.innerHTML = '<div class="loading-spinner"></div><span>Analyzing...</span>';
+    analyzeBtn.disabled = true;
+    
     const storage = await chrome.storage.local.get(['capturedReceipts']);
     const settings = await chrome.storage.sync.get(['customCategories']);
     const receipt = storage.capturedReceipts[index];
@@ -241,6 +365,7 @@ async function analyzeReceipt(index) {
     }
 
     const analysisResult = await response.json();
+    logDebug(`Raw Anthropic Response: ${JSON.stringify(analysisResult, null, 2)}`);
     logDebug('Received analysis result');
     
     // Update receipt with analysis results
@@ -281,8 +406,11 @@ async function analyzeReceipt(index) {
     } else {
       errorMessage += error.message;
     }
-    alert(errorMessage);
+    showCustomAlert(errorMessage);
     logDebug(`Analysis error: ${error.message}`, 'error');
+    // Reset button state on error
+    analyzeBtn.disabled = false;
+    analyzeBtn.innerHTML = 'Re-Analyze';
   }
 }
 
@@ -291,41 +419,38 @@ function logDebug(message, type = 'info') {
   const debugPanel = document.getElementById('debugPanel');
   if (!debugPanel) return;
   
-  chrome.storage.sync.get(['showDebug'], (result) => {
-    if (!result.showDebug && type !== 'error') return;
-    
-    const timestamp = new Date().toLocaleTimeString();
-    const div = document.createElement('div');
-    div.className = type;
+  const timestamp = new Date().toLocaleTimeString();
+  const div = document.createElement('div');
+  div.className = type;
 
-    if (message instanceof Error) {
-      div.textContent = `${timestamp}: ${message.name}: ${message.message}`;
-      if (message.stack) {
-        console.error(message.stack);
-      }
-    } else if (typeof message === 'object') {
-      div.textContent = `${timestamp}: ${JSON.stringify(message, null, 2)}`;
-    } else {
-      div.textContent = `${timestamp}: ${message}`;
+  // Format the message
+  let formattedMessage = '';
+  if (message instanceof Error) {
+    formattedMessage = `${message.name}: ${message.message}`;
+    if (message.stack) {
+      console.error(message.stack);
     }
-    
-    const firstChild = debugPanel.firstChild;
-    if (firstChild) {
-      debugPanel.insertBefore(div, firstChild);
-    } else {
-      debugPanel.appendChild(div);
-    }
-    
-    while (debugPanel.children.length > 10) {
-      debugPanel.removeChild(debugPanel.lastChild);
-    }
+  } else if (typeof message === 'object') {
+    formattedMessage = JSON.stringify(message, null, 2);
+  } else {
+    formattedMessage = message;
+  }
+  
+  div.textContent = `${timestamp}: ${formattedMessage}`;
+  
+  const firstChild = debugPanel.firstChild;
+  if (firstChild) {
+    debugPanel.insertBefore(div, firstChild);
+  } else {
+    debugPanel.appendChild(div);
+  }
+  
+  while (debugPanel.children.length > 10) {
+    debugPanel.removeChild(debugPanel.lastChild);
+  }
 
-    if (type === 'error') {
-      debugPanel.style.display = 'block';
-    } else {
-      debugPanel.style.display = result.showDebug ? 'block' : 'none';
-    }
-  });
+  // Always show debug panel
+  debugPanel.style.display = 'block';
 }
 
 // Update the fileReceipt function to use selected category
@@ -551,6 +676,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   // Add purchase button handlers
   document.getElementById('buyCreditsBtn').addEventListener('click', handlePurchaseCredits);
   document.getElementById('subscribeBtn').addEventListener('click', handleSubscribe);
+
+  // Add debug button for testing if in development
+  if (chrome.runtime.getManifest().version_name === 'development' || 
+      location.hostname === 'localhost') {
+    const debugBtn = document.getElementById('addCapturesBtn');
+    debugBtn.style.display = 'inline-block';
+    debugBtn.addEventListener('click', async () => {
+      const status = await chrome.storage.sync.get(['trialCaptures']);
+      const currentCaptures = status.trialCaptures || 0;
+      await chrome.storage.sync.set({ 
+        trialCaptures: currentCaptures + 5 
+      });
+      updateTrialUI();
+    });
+  }
 });
 
 // Update the captureSelection function to check trial status
@@ -560,7 +700,7 @@ async function captureSelection() {
     const status = await chrome.storage.sync.get(['trialCaptures', 'subscription']);
     
     if (!status.subscription?.active && (!status.trialCaptures || status.trialCaptures <= 0)) {
-      alert('You have no captures remaining. Please purchase more captures or subscribe.');
+      showCustomAlert('You have no captures remaining. Please purchase more captures or subscribe to our monthly plan for unlimited captures.');
       return;
     }
 

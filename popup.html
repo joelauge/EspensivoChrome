@@ -57,6 +57,9 @@
       font-size: 12px;
       max-height: 100px;
       overflow-y: auto;
+      display: block;
+      white-space: pre-wrap;
+      font-family: monospace;
     }
     .error { color: #dc2626; }
     .success { color: #059669; }
@@ -156,6 +159,7 @@
       font-weight: 600;
     }
     .receipt-item {
+      position: relative;
       background: white;
       border: 1px solid #e5e7eb;
       border-radius: 6px;
@@ -220,10 +224,18 @@
       background: #dc2626;
     }
     .receipt-item .actions .analyze-btn {
-      background: #1d4ed8;
+      min-width: 100px;  /* Set fixed minimum width */
+      height: 32px;      /* Set fixed height */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
     }
-    .receipt-item .actions .analyze-btn:hover {
-      background: #047857;
+    .receipt-item .actions .analyze-btn .loading-spinner {
+      width: 16px;      /* Smaller spinner */
+      height: 16px;     /* Smaller spinner */
+      border-width: 2px;  /* Thinner border */
+      margin-right: 2px;
     }
     .receipt-item .analysis {
       margin-top: 8px;
@@ -618,13 +630,62 @@
     .price {
       font-weight: 600;
     }
+
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(-20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .new-receipt {
+      animation: slideIn 0.5s ease-out forwards;
+      background-color: #f0f9ff;  /* Light blue background */
+      box-shadow: 0 0 0 2px #60a5fa;  /* Blue outline */
+    }
+
+    .new-receipt:hover {
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 0 0 2px #60a5fa;
+    }
+
+    .debug-btn {
+      margin-left: 8px;
+      padding: 2px 8px;
+      font-size: 12px;
+      background: #9ca3af;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+    }
+
+    .debug-btn:hover {
+      background: #6b7280;
+    }
+
+    .new-tag {
+      position: absolute;
+      top: 12px;
+      right: 12px;
+      background: #2563eb;
+      color: white;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 500;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="header">
       <div class="logo-title">
-        <img src="/images/icon48.png" alt="Espensivo Logo" class="logo">
+        <img src="images/icon48.png" alt="Espensivo Logo" class="logo">
         <h1>Espensivo</h1>
       </div>
       <a href="#" id="settingsLink" class="settings-link">
@@ -639,6 +700,9 @@
     <div class="trial-section" id="trialSection">
       <div class="trial-counter">
         <span id="capturesLeft">5</span> Free Captures Left
+        <button id="addCapturesBtn" class="debug-btn" style="display: none;">
+          + Add 5 Captures
+        </button>
       </div>
       <div class="purchase-options">
         <button id="buyCreditsBtn" class="purchase-btn">

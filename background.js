@@ -94,6 +94,11 @@ chrome.runtime.onInstalled.addListener((details) => {
       chrome.storage.local.set({ capturedReceipts: receipts }, () => {
         lastCapturedImage = request.imageData;
         sendResponse({ success: true });
+        
+        // Wait 500ms then open popup
+        setTimeout(() => {
+          chrome.action.openPopup();
+        }, 500);
       });
     });
   }

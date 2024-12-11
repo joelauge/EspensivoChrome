@@ -4,36 +4,49 @@
   let selectionDiv = null;
   let overlay = null;
   let captureBtn = null;
+  let container = null;
 
   function createOverlay() {
-    // Create overlay
-    overlay = document.createElement('div');
-    overlay.style.cssText = `
+    // Create container for all UI elements
+    container = document.createElement('div');
+    container.style.cssText = `
       position: fixed;
       top: 0;
       left: 0;
       width: 100%;
       height: 100%;
-      background: rgba(0, 0, 0, 0.2);
       z-index: 999999;
+      pointer-events: none;
+    `;
+
+    // Create overlay
+    overlay = document.createElement('div');
+    overlay.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.2);
       cursor: crosshair;
+      pointer-events: auto;
     `;
 
     // Create selection div
     selectionDiv = document.createElement('div');
     selectionDiv.style.cssText = `
-      position: fixed;
+      position: absolute;
       border: 2px solid #2563eb;
       background: rgba(37, 99, 235, 0.1);
       display: none;
-      z-index: 1000000;
+      pointer-events: auto;
     `;
 
     // Create capture button
     captureBtn = document.createElement('button');
     captureBtn.textContent = 'Capture';
     captureBtn.style.cssText = `
-      position: fixed;
+      position: absolute;
       display: none;
       padding: 8px 16px;
       background: #2563eb;
@@ -41,12 +54,14 @@
       border: none;
       border-radius: 4px;
       cursor: pointer;
-      z-index: 1000001;
+      pointer-events: auto;
     `;
 
-    document.body.appendChild(overlay);
-    document.body.appendChild(selectionDiv);
-    document.body.appendChild(captureBtn);
+    // Add all elements to container
+    container.appendChild(overlay);
+    container.appendChild(selectionDiv);
+    container.appendChild(captureBtn);
+    document.body.appendChild(container);
 
     // Add event listeners
     overlay.addEventListener('mousedown', startSelection);
@@ -95,24 +110,29 @@
 
   async function captureSelection() {
     try {
-      // Store the dimensions before hiding elements
-      const rect = selectionDiv.getBoundingClientRect();
+      // 1. Store the dimensions and remove all UI elements
       const dimensions = {
-        left: rect.left + window.scrollX,
-        top: rect.top + window.scrollY,
-        width: rect.width,
-        height: rect.height
+        left: parseInt(selectionDiv.style.left) + window.scrollX,
+        top: parseInt(selectionDiv.style.top) + window.scrollY,
+        width: parseInt(selectionDiv.style.width),
+        height: parseInt(selectionDiv.style.height)
       };
 
-      // Hide ALL UI elements before capture
-      selectionDiv.style.display = 'none';
-      captureBtn.style.display = 'none';
-      overlay.style.display = 'none';
+      // 2. Important: Remove ALL UI elements from DOM before capture
+      if (container && container.parentNode) {
+        container.parentNode.removeChild(container);
+      }
 
-      // Wait for a frame to ensure UI is hidden
-      await new Promise(resolve => requestAnimationFrame(resolve));
+      // 3. Wait for three animation frames to ensure complete DOM update
+      await new Promise(resolve => {
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(resolve);
+          });
+        });
+      });
 
-      // Take screenshot
+      // 4. Take the screenshot
       const response = await chrome.runtime.sendMessage({
         action: 'takeScreenshot'
       });
@@ -121,7 +141,7 @@
         throw new Error('Failed to capture screenshot');
       }
 
-      // Create canvas for cropping
+      // 5. Create canvas and crop image
       const img = new Image();
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
@@ -132,11 +152,10 @@
         img.src = response.dataUrl;
       });
 
-      // Set canvas dimensions to match selection
+      // 6. Set canvas dimensions and draw cropped image
       canvas.width = dimensions.width;
       canvas.height = dimensions.height;
 
-      // Draw cropped image
       ctx.drawImage(
         img,
         dimensions.left,
@@ -149,28 +168,16 @@
         dimensions.height
       );
 
-      // Get cropped image data
+      // 7. Get final image and send to background
       const croppedDataUrl = canvas.toDataURL('image/png');
-
-      // Send cropped image to background
       await chrome.runtime.sendMessage({
         action: 'captureRegion',
         imageData: croppedDataUrl
       });
 
-      // Clean up
-      window.removeEventListener('mousemove', handleMouseMove);
-      window.removeEventListener('mouseup', handleMouseUp);
-      document.body.removeChild(overlay);
-      document.body.removeChild(selectionDiv);
-      document.body.removeChild(captureBtn);
-
     } catch (error) {
       console.error('Capture failed:', error);
-      // Restore UI if there's an error
-      if (selectionDiv) selectionDiv.style.display = 'block';
-      if (captureBtn) captureBtn.style.display = 'block';
-      if (overlay) overlay.style.display = 'block';
+      // Don't restore UI - let user start fresh if there's an error
     }
   }
 

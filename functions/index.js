@@ -124,15 +124,51 @@ exports.analyze = onRequest({
         model: 'claude-3-haiku-20240307',
         max_tokens: 1024,
         system: `You are a receipt analysis expert. Extract key information from receipts and format it as JSON. 
-        For expense_category, categorize into one of these default categories: ${DEFAULT_CATEGORIES.join(', ')}. 
-        If custom categories are provided, also consider those for better categorization.`,
+        CRITICAL INSTRUCTIONS FOR TAX EXTRACTION:
+        1. Look for tax information in this exact order:
+          a) First look for explicit tax amounts with labels like:
+             - "Tax:" or "Tax Amount:"
+             - "GST:" or "GST Amount:"
+             - "HST:" or "HST Amount:"
+             - "VAT:" or "Sales Tax:"
+          b) If a GST/HST number is present (e.g., "GST# R103382461") but no explicit tax amount,
+             calculate tax based on standard rates:
+             - For Canadian GST: 5% of subtotal
+             - For Canadian HST: 13% of subtotal
+          c) Only return "$0.00" if you've thoroughly checked and confirmed no tax information exists
+          d) Always include the proper currency symbol (e.g., "$", "C$", "£")
+        
+        2. CATEGORY DETERMINATION:
+          Use these exact categories only:
+          - "Software & Subscriptions" for software/digital services
+          - "Equipment" for music stores/instruments
+          - "Meals & Entertainment" for restaurants/cafes
+          - Other categories as provided
+          
+        3. RESPONSE FORMAT:
+          Always return this exact JSON structure:
+          {
+            "total_amount": "amount with currency symbol",
+            "date": "YYYY-MM-DD",
+            "vendor_name": "exact vendor name",
+            "expense_category": "matching category from list above",
+            "taxes": "tax amount with currency symbol (calculate if GST/HST number present)"
+          }
+          Never omit any fields. Calculate tax if GST/HST number exists.`,
         messages: [{
           role: 'user',
           content: [
             {
               type: 'text',
-              text: `Please analyze this receipt image and extract the following information in JSON format: 
-              total_amount (with currency), date (in YYYY-MM-DD format), vendor_name, and expense_category. 
+              text: `Analyze this receipt and return a JSON object with these EXACT fields:
+              {
+                "total_amount": "Include currency symbol",
+                "date": "YYYY-MM-DD format",
+                "vendor_name": "Exact vendor name",
+                "expense_category": "Must match provided categories",
+                "taxes": "Exact tax amount with currency symbol"
+              }
+              DO NOT OMIT TAX IF PRESENT. DO NOT DEFAULT TO MEALS CATEGORY.
               ${req.body.customCategories ? `Also consider these custom categories: ${req.body.customCategories.join(', ')}` : ''}`
             },
             {
