@@ -1,5 +1,6 @@
 {
   "hosting": {
+    "site": "espensivo",
     "public": "public",
     "ignore": [
       "firebase.json",
@@ -42,5 +43,8 @@
   "firestore": {
     "rules": "firestore.rules",
     "indexes": "firestore.indexes.json"
+  },
+  "auth": {
+    "domain": "www.espensivo.com"
   }
 }

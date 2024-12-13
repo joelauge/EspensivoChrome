@@ -220,6 +220,60 @@
     .nav-link:hover {
       color: #1d4ed8;
     }
+
+    .logout-section {
+      margin-top: 40px;
+      padding-top: 20px;
+    }
+
+    .divider {
+      border: none;
+      border-top: 1px solid #e5e7eb;
+      margin: 20px 0;
+    }
+
+    .user-info {
+      margin-bottom: 16px;
+      font-size: 14px;
+      color: #6b7280;
+    }
+
+    .logout-btn {
+      background: #ef4444;
+      color: white;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 14px;
+      cursor: pointer;
+      border: none;
+      transition: background-color 0.2s;
+    }
+
+    .logout-btn:hover {
+      background: #dc2626;
+    }
+
+    .logout-icon {
+      width: 20px;
+      height: 20px;
+    }
+
+    .login-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-right: 16px;
+    }
+
+    .login-indicator {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background-color: #4b5563;
+    }
   </style>
 </head>
 <body>
@@ -228,13 +282,19 @@
       <img src="images/icon48.png" alt="Espensivo Logo" class="logo">
       <h1>Espensivo Settings</h1>
     </div>
-    <div class="nav-links">
-      <a href="archived.html" class="nav-link">
-        View Archived Receipts
-        <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
-          <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
-        </svg>
-      </a>
+    <div class="header-right">
+      <div id="loginStatus" class="login-status">
+        <div class="login-indicator"></div>
+        <span id="loginText">Sign In</span>
+      </div>
+      <div class="nav-links">
+        <a href="archived.html" class="nav-link">
+          View Archived Receipts
+          <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd"/>
+          </svg>
+        </a>
+      </div>
     </div>
   </div>
 
@@ -285,6 +345,20 @@
   <button id="saveBtn">Save Settings</button>
   <div id="status" class="status" style="display: none;"></div>
 
+  <div class="logout-section" id="logoutSection" style="display: none;">
+    <hr class="divider">
+    <div class="user-info">
+      <span id="userEmail"></span>
+    </div>
+    <button id="logoutBtn" class="logout-btn">
+      <svg class="logout-icon" width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor">
+        <path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      Log Out
+    </button>
+  </div>
+
   <script src="settings.js"></script>
+  <script type="module" src="settings-auth.js"></script>
 </body>
 </html> 

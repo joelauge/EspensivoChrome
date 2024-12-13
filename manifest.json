@@ -1,25 +1,16 @@
 {
-  "name": "Espensivo - Receipt to Expense",
-  "version": "1.0",
-  "version_name": "development",
-  "description": "Capture and convert receipts and invoices to expenses in Quickbooks/Xero in seconds.",
   "manifest_version": 3,
-  "icons": {
-    "16": "images/icon16.png",
-    "48": "images/icon48.png",
-    "128": "images/icon128.png"
-  },
+  "name": "Espensivo",
+  "version": "1.0",
+  "description": "Track your expenses automatically",
   "permissions": [
     "storage",
-    "tabs",
-    "activeTab",
-    "scripting"
+    "identity",
+    "notifications"
   ],
   "host_permissions": [
-    "https://us-central1-espensivo.cloudfunctions.net/*",
-    "https://mail.google.com/*",
-    "https://api.anthropic.com/*",
-    "https://js.stripe.com/*"
+    "https://*.espensivo.com/*",
+    "https://us-central1-espensivo.cloudfunctions.net/*"
   ],
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'self'"
@@ -32,21 +23,25 @@
       "128": "images/icon128.png"
     }
   },
+  "icons": {
+    "16": "images/icon16.png",
+    "48": "images/icon48.png",
+    "128": "images/icon128.png"
+  },
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "classic"
+  },
+  "externally_connectable": {
+    "matches": ["https://*.espensivo.com/*"],
+    "accepts_tls_channel_id": false
   },
   "web_accessible_resources": [{
     "resources": [
-      "selection.js",
-      "settings.html",
-      "archived.html",
+      "popup.html",
       "images/*",
       "lib/*"
     ],
-    "matches": ["<all_urls>"]
-  }],
-  "options_ui": {
-    "page": "settings.html",
-    "open_in_tab": true
-  }
+    "matches": ["https://*.espensivo.com/*"]
+  }]
 } 
