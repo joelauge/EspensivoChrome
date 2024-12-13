@@ -7,14 +7,8 @@ const multer = require('multer');
 const Stripe = require('stripe');
 const upload = multer({ storage: multer.memoryStorage() });
 const admin = require('firebase-admin');
-const { OAuth2Client } = require('google-auth-library');
 const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
 require('dotenv').config();
-
-// Initialize Stripe
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2023-10-16'
-});
 
 // Initialize Firebase Admin
 try {
@@ -26,76 +20,6 @@ try {
 
 // Initialize the api object
 exports.api = {};
-
-// Add Firebase token exchange endpoint
-exports.createFirebaseToken = onRequest({
-  cors: true,
-}, async (req, res) => {
-  console.log('Received token exchange request');
-
-  // Enable CORS
-  res.set('Access-Control-Allow-Origin', '*');
-  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-
-  // Handle preflight
-  if (req.method === 'OPTIONS') {
-    res.status(204).send('');
-    return;
-  }
-
-  if (req.method !== 'POST') {
-    res.status(405).send('Method Not Allowed');
-    return;
-  }
-
-  try {
-    const { token } = req.body;
-    if (!token) {
-      throw new Error('No token provided');
-    }
-
-    // Create OAuth2 client
-    const oAuth2Client = new OAuth2Client();
-
-    // Verify the Google OAuth token
-    const ticket = await oAuth2Client.verifyIdToken({
-      idToken: token,
-      audience: '282331992610-aqvvs0u2kk0d9jk0s7g9f1p3jtqm4l7q.apps.googleusercontent.com' // Your client ID
-    });
-
-    const payload = ticket.getPayload();
-    const userId = payload.sub; // Google User ID
-    const email = payload.email;
-
-    // Create or update Firebase user
-    let firebaseUser;
-    try {
-      firebaseUser = await admin.auth().getUserByEmail(email);
-    } catch (error) {
-      if (error.code === 'auth/user-not-found') {
-        firebaseUser = await admin.auth().createUser({
-          email: email,
-          emailVerified: payload.email_verified,
-          uid: userId
-        });
-      } else {
-        throw error;
-      }
-    }
-
-    // Create a custom token
-    const firebaseToken = await admin.auth().createCustomToken(userId);
-
-    console.log('Successfully created Firebase token for user:', email);
-    res.json({ firebaseToken });
-  } catch (error) {
-    console.error('Token exchange error:', error);
-    res.status(400).json({
-      error: error.message
-    });
-  }
-});
 
 // Add the handler
 exports.analyze = onRequest({
@@ -380,97 +304,5 @@ exports.email = onRequest({
       details: error.message,
       code: error.code
     });
-  }
-});
-
-// Create checkout session endpoint
-exports.createCheckoutSession = onRequest({
-  cors: true,
-  secrets: ["STRIPE_SECRET_KEY"]
-}, async (req, res) => {
-  console.log('Received checkout request');
-
-  // Enable CORS
-  res.set('Access-Control-Allow-Origin', '*');
-  res.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
-  res.set('Access-Control-Allow-Headers', 'Content-Type');
-
-  // Handle preflight
-  if (req.method === 'OPTIONS') {
-    res.status(204).send('');
-    return;
-  }
-
-  if (req.method !== 'POST') {
-    res.status(405).send('Method Not Allowed');
-    return;
-  }
-
-  try {
-    const { priceId, mode, extensionId, userId } = req.body;
-
-    if (!priceId || !mode || !extensionId || !userId) {
-      throw new Error('Missing required fields');
-    }
-
-    // Create success and cancel URLs for Chrome extension
-    const successUrl = `chrome-extension://${extensionId}/checkout-complete.html?session_id={CHECKOUT_SESSION_ID}`;
-    const cancelUrl = `chrome-extension://${extensionId}/popup.html`;
-
-    // Create Stripe checkout session
-    const session = await stripe.checkout.sessions.create({
-      payment_method_types: ['card'],
-      mode: mode,
-      success_url: successUrl,
-      cancel_url: cancelUrl,
-      client_reference_id: userId,
-      metadata: {
-        extensionId: extensionId
-      },
-      line_items: [{
-        price: priceId,
-        quantity: 1
-      }]
-    });
-
-    res.json({ url: session.url });
-  } catch (error) {
-    console.error('Checkout error:', error);
-    res.status(500).json({
-      error: error.message
-    });
-  }
-});
-
-// Stripe webhook endpoint
-exports.stripeWebhook = onRequest({
-  cors: false
-}, async (req, res) => {
-  const sig = req.headers['stripe-signature'];
-  const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET;
-
-  try {
-    const event = stripe.webhooks.constructEvent(req.rawBody, sig, endpointSecret);
-
-    switch (event.type) {
-      case 'checkout.session.completed':
-        const session = event.data.object;
-        
-        // Update user's subscription status
-        await admin.firestore().collection('users').doc(session.client_reference_id).set({
-          subscription: {
-            active: true,
-            type: session.mode === 'subscription' ? 'unlimited' : 'credits',
-            updatedAt: admin.firestore.FieldValue.serverTimestamp()
-          }
-        }, { merge: true });
-
-        break;
-    }
-
-    res.json({ received: true });
-  } catch (error) {
-    console.error('Webhook error:', error);
-    res.status(400).send(`Webhook Error: ${error.message}`);
   }
 });

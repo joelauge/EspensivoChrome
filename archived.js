@@ -1,5 +1,3 @@
-import { auth } from './firebase-config.js';
-
 document.addEventListener('DOMContentLoaded', async () => {
   const container = document.getElementById('archivedReceipts');
   const receiptModal = document.getElementById('receiptModal');
@@ -170,13 +168,5 @@ document.addEventListener('DOMContentLoaded', async () => {
         modal.classList.remove('active');
       }
     });
-  });
-
-  // Handle auth state changes
-  auth.onAuthStateChanged((user) => {
-    if (!user) {
-      // Redirect to popup if not logged in
-      window.location.href = 'popup.html';
-    }
   });
 }); 
